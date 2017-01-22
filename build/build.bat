@@ -1,0 +1,1 @@
+cl /Zi ..\code\win32_sasquatch.cpp user32.lib

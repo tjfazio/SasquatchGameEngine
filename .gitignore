@@ -52,6 +52,7 @@ Temporary Items
 # =========================
 
 # VSCode weirdness
+.vscode
 
 # Build output
 *.pdb

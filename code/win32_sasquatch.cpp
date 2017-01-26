@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <tchar.h>
+#include <stdint.h>
 
 static TCHAR szWindowClass[] = _T("sasquatch");
 static TCHAR szTitle[] = _T("Sasquatch Game Engine");
@@ -77,7 +78,15 @@ int WinMain(
     return (int) msg.wParam;
 }
 
-
+void PaintWindow(
+    HDC windowDeviceContext,
+    int32_t left,
+    int32_t top,
+    int32_t right,
+    int32_t bottom)
+{
+    PatBlt(windowDeviceContext, left, top, right - left, bottom - top, BLACKNESS);
+}
 
 LRESULT WndProc(  
   HWND hWnd,  
@@ -88,6 +97,13 @@ LRESULT WndProc(
 {    
     switch (uMsg)
     {
+        case WM_PAINT:
+            PAINTSTRUCT paint;
+            HDC deviceContext;
+            deviceContext = BeginPaint(hWnd, &paint);
+            PaintWindow(deviceContext, paint.rcPaint.left, paint.rcPaint.top, paint.rcPaint.right, paint.rcPaint.bottom);
+            EndPaint(hWnd, &paint);
+            break;
         case WM_DESTROY:
             PostQuitMessage(0);
             break;

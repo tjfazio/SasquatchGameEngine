@@ -4,10 +4,131 @@
 #include <tchar.h>
 #include <stdint.h>
 
-static TCHAR szWindowClass[] = _T("sasquatch");
-static TCHAR szTitle[] = _T("Sasquatch Game Engine");
+#include "win32_util.h"
 
-LRESULT WndProc(HWND hwnd,  UINT uMsg,  WPARAM wParam,  LPARAM lParam);
+#define global_variable static
+#define internal_function static
+#define local_persist static
+#define pixel_t uint32_t
+
+global_variable TCHAR szWindowClass[] = _T("sasquatch");
+global_variable TCHAR szTitle[] = _T("Sasquatch Game Engine");
+
+typedef struct tagBitmapBuffer {
+    BITMAPINFO Info;
+    HBITMAP BitmapHandle;
+    HDC DeviceContext;
+    void *Memory;
+} BitmapBuffer;
+
+global_variable BitmapBuffer GlobalBackBuffer;
+
+pixel_t GetFakePixel(int32_t x, int32_t y)
+{
+    uint8_t blue = x % 256;
+    uint8_t green = y % 256;
+    uint8_t red = (x + y) % 128;
+
+    return red | (blue << 4) | (green << 8);
+}
+
+void Win32_ResizeWindow(
+    HDC targetDeviceContext,
+    RECT clientRect
+    )
+{
+    if (GlobalBackBuffer.BitmapHandle)
+    {
+        DeleteObject(GlobalBackBuffer.BitmapHandle);
+    }
+    if (!GlobalBackBuffer.DeviceContext)
+    {
+        // TODO(tjfazio) - mess with this for multiple monitors??
+        GlobalBackBuffer.DeviceContext = CreateCompatibleDC(targetDeviceContext);
+    }
+
+    GlobalBackBuffer.Info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    GlobalBackBuffer.Info.bmiHeader.biWidth = Win32_GetRectWidth(clientRect);
+    GlobalBackBuffer.Info.bmiHeader.biHeight = Win32_GetRectHeight(clientRect);
+    GlobalBackBuffer.Info.bmiHeader.biPlanes = 1;
+    GlobalBackBuffer.Info.bmiHeader.biBitCount = 8*sizeof(pixel_t);
+    GlobalBackBuffer.Info.bmiHeader.biCompression = BI_RGB;    
+
+    GlobalBackBuffer.BitmapHandle = CreateDIBSection(
+        targetDeviceContext,
+        &GlobalBackBuffer.Info,
+        DIB_RGB_COLORS,
+        &GlobalBackBuffer.Memory,
+        0,
+        0
+    );
+
+    int32_t width = GlobalBackBuffer.Info.bmiHeader.biWidth;
+    int32_t height = GlobalBackBuffer.Info.bmiHeader.biHeight;
+    pixel_t *pixels = (pixel_t *)(GlobalBackBuffer.Memory);
+    for (int y = 0; y < width; y++)
+    {
+        for (int x = 0; x < height; x++)
+        {
+            // TODO(tjfazio) - figure out why this doesn't work
+            // pixels[y * width + x] = 0;
+            *pixels = GetFakePixel(x, y);
+            pixels++;
+        }
+    }
+}
+
+void Win32_PaintWindow(
+    HDC targetDeviceContext,
+    RECT paintRect
+    )
+{
+    SelectObject(GlobalBackBuffer.DeviceContext, GlobalBackBuffer.BitmapHandle);
+    BitBlt(
+        targetDeviceContext,
+        paintRect.top,
+        paintRect.left,
+        Win32_GetRectWidth(paintRect),
+        Win32_GetRectHeight(paintRect),
+        GlobalBackBuffer.DeviceContext,
+        paintRect.top,
+        paintRect.left,
+        SRCCOPY
+    );
+}
+
+LRESULT WndProc(  
+  HWND hWnd,  
+  UINT uMsg,  
+  WPARAM wParam,  
+  LPARAM lParam  
+)
+{    
+    switch (uMsg)
+    {
+        case WM_SIZE:
+            RECT clientRect;
+            GetClientRect(hWnd, &clientRect);
+            Win32_ResizeWindow(NULL, clientRect);
+            break;
+        case WM_PAINT:
+            PAINTSTRUCT paint;
+            HDC deviceContext;
+            deviceContext = BeginPaint(hWnd, &paint);
+            Win32_PaintWindow(deviceContext, paint.rcPaint);
+            EndPaint(hWnd, &paint);
+            break;
+        case WM_CLOSE:
+        case WM_DESTROY:
+            PostQuitMessage(0);
+            break;
+        default:
+            return DefWindowProc(hWnd, uMsg, wParam, lParam);
+            break;
+    }
+
+    return 0;
+}
 
 int WinMain(
     HINSTANCE hInstance,
@@ -46,8 +167,10 @@ int WinMain(
         szWindowClass,
         szTitle,
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        500, 100,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        500,
+        500,
         NULL,
         NULL,
         hInstance,
@@ -76,41 +199,4 @@ int WinMain(
     }
 
     return (int) msg.wParam;
-}
-
-void PaintWindow(
-    HDC windowDeviceContext,
-    int32_t left,
-    int32_t top,
-    int32_t right,
-    int32_t bottom)
-{
-    PatBlt(windowDeviceContext, left, top, right - left, bottom - top, BLACKNESS);
-}
-
-LRESULT WndProc(  
-  HWND hWnd,  
-  UINT uMsg,  
-  WPARAM wParam,  
-  LPARAM lParam  
-)
-{    
-    switch (uMsg)
-    {
-        case WM_PAINT:
-            PAINTSTRUCT paint;
-            HDC deviceContext;
-            deviceContext = BeginPaint(hWnd, &paint);
-            PaintWindow(deviceContext, paint.rcPaint.left, paint.rcPaint.top, paint.rcPaint.right, paint.rcPaint.bottom);
-            EndPaint(hWnd, &paint);
-            break;
-        case WM_DESTROY:
-            PostQuitMessage(0);
-            break;
-        default:
-            return DefWindowProc(hWnd, uMsg, wParam, lParam);
-            break;
-    }
-
-    return 0;
 }

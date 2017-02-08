@@ -21,61 +21,39 @@ typedef struct tagBitmapBuffer {
     void *Memory;
 } BitmapBuffer;
 
-global_variable BitmapBuffer GlobalBackBuffer;
-
-pixel_t GetFakePixel(int32_t x, int32_t y)
-{
-    uint8_t blue = x % 256;
-    uint8_t green = y % 256;
-    uint8_t red = (x + y) % 128;
-
-    return red | (blue << 4) | (green << 8);
-}
+global_variable BitmapBuffer VideoBackBuffer;
+global_variable bool IsApplicationRunning;
 
 void Win32_ResizeWindow(
     HDC targetDeviceContext,
     RECT clientRect
     )
 {
-    if (GlobalBackBuffer.BitmapHandle)
+    if (VideoBackBuffer.BitmapHandle)
     {
-        DeleteObject(GlobalBackBuffer.BitmapHandle);
+        DeleteObject(VideoBackBuffer.BitmapHandle);
     }
-    if (!GlobalBackBuffer.DeviceContext)
+    if (!VideoBackBuffer.DeviceContext)
     {
         // TODO(tjfazio) - mess with this for multiple monitors??
-        GlobalBackBuffer.DeviceContext = CreateCompatibleDC(targetDeviceContext);
+        VideoBackBuffer.DeviceContext = CreateCompatibleDC(targetDeviceContext);
     }
 
-    GlobalBackBuffer.Info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    GlobalBackBuffer.Info.bmiHeader.biWidth = Win32_GetRectWidth(clientRect);
-    GlobalBackBuffer.Info.bmiHeader.biHeight = Win32_GetRectHeight(clientRect);
-    GlobalBackBuffer.Info.bmiHeader.biPlanes = 1;
-    GlobalBackBuffer.Info.bmiHeader.biBitCount = 8*sizeof(pixel_t);
-    GlobalBackBuffer.Info.bmiHeader.biCompression = BI_RGB;    
+    VideoBackBuffer.Info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    VideoBackBuffer.Info.bmiHeader.biWidth = Win32_GetRectWidth(clientRect);
+    VideoBackBuffer.Info.bmiHeader.biHeight = Win32_GetRectHeight(clientRect);
+    VideoBackBuffer.Info.bmiHeader.biPlanes = 1;
+    VideoBackBuffer.Info.bmiHeader.biBitCount = 8*sizeof(pixel_t);
+    VideoBackBuffer.Info.bmiHeader.biCompression = BI_RGB;
 
-    GlobalBackBuffer.BitmapHandle = CreateDIBSection(
-        targetDeviceContext,
-        &GlobalBackBuffer.Info,
+    VideoBackBuffer.BitmapHandle = CreateDIBSection(
+        VideoBackBuffer.DeviceContext,
+        &VideoBackBuffer.Info,
         DIB_RGB_COLORS,
-        &GlobalBackBuffer.Memory,
+        &VideoBackBuffer.Memory,
         0,
         0
     );
-
-    int32_t width = GlobalBackBuffer.Info.bmiHeader.biWidth;
-    int32_t height = GlobalBackBuffer.Info.bmiHeader.biHeight;
-    pixel_t *pixels = (pixel_t *)(GlobalBackBuffer.Memory);
-    for (int y = 0; y < width; y++)
-    {
-        for (int x = 0; x < height; x++)
-        {
-            // TODO(tjfazio) - figure out why this doesn't work
-            // pixels[y * width + x] = 0;
-            *pixels = GetFakePixel(x, y);
-            pixels++;
-        }
-    }
 }
 
 void Win32_PaintWindow(
@@ -83,18 +61,75 @@ void Win32_PaintWindow(
     RECT paintRect
     )
 {
-    SelectObject(GlobalBackBuffer.DeviceContext, GlobalBackBuffer.BitmapHandle);
+    SelectObject(VideoBackBuffer.DeviceContext, VideoBackBuffer.BitmapHandle);
     BitBlt(
         targetDeviceContext,
         paintRect.top,
         paintRect.left,
         Win32_GetRectWidth(paintRect),
         Win32_GetRectHeight(paintRect),
-        GlobalBackBuffer.DeviceContext,
+        VideoBackBuffer.DeviceContext,
         paintRect.top,
         paintRect.left,
         SRCCOPY
     );
+}
+
+// Fake animation stuff for prototyping
+typedef struct tagAnimationState {
+    int32_t XStart;
+    int32_t XVelocity;
+    int32_t YStart;
+    int32_t YVelocity;
+    int32_t BlueWidth;
+    int32_t GreenWidth;
+} AnimationState;
+
+global_variable AnimationState TestAnimation;
+
+pixel_t GetFakePixel(int32_t x, int32_t y)
+{
+    pixel_t blue = 0;
+    if (x >= TestAnimation.XStart && x < TestAnimation.XStart + TestAnimation.BlueWidth)
+    {
+        blue = 0xFF;
+    }   
+
+    pixel_t green = 0;
+    if (y >= TestAnimation.YStart && y < TestAnimation.YStart + TestAnimation.GreenWidth)
+    {
+        green = 0xFF;
+    }
+
+    pixel_t red = 0;
+
+    return (red << 16) | (green << 8) | blue;
+}
+
+void Animate()
+{
+    int32_t width = VideoBackBuffer.Info.bmiHeader.biWidth;
+    int32_t height = VideoBackBuffer.Info.bmiHeader.biHeight;
+    pixel_t *pixels = (pixel_t *)(VideoBackBuffer.Memory);
+
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            pixels[y * width + x] = GetFakePixel(x, y);
+        }
+    }
+
+    if (TestAnimation.XStart < 0 || TestAnimation.XStart + TestAnimation.BlueWidth > VideoBackBuffer.Info.bmiHeader.biWidth)
+    {
+        TestAnimation.XVelocity = -1 * TestAnimation.XVelocity;
+    }
+    if (TestAnimation.YStart < 0 || TestAnimation.YStart + TestAnimation.GreenWidth > VideoBackBuffer.Info.bmiHeader.biHeight)
+    {
+        TestAnimation.YVelocity = -1 * TestAnimation.YVelocity;
+    }
+    TestAnimation.XStart += TestAnimation.XVelocity;
+    TestAnimation.YStart += TestAnimation.YVelocity;
 }
 
 LRESULT WndProc(  
@@ -191,12 +226,34 @@ int WinMain(
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
 
-    MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0))
+    IsApplicationRunning = true;
+    TestAnimation.XStart = 0;
+    TestAnimation.XVelocity = 1;
+    TestAnimation.YStart = 0;
+    TestAnimation.YVelocity = 1;
+    TestAnimation.BlueWidth = 16;
+    TestAnimation.GreenWidth = 32;
+
+    while (IsApplicationRunning)
     {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
+        MSG msg;
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+        {
+            if (msg.message == WM_QUIT)
+            {
+                IsApplicationRunning = false;
+            }
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+
+        Animate();
+        
+        RECT clientRect;
+        GetClientRect(hWnd, &clientRect);
+        HDC deviceContext = GetDC(hWnd);
+        Win32_PaintWindow(deviceContext, clientRect);
     }
 
-    return (int) msg.wParam;
+    return 0;
 }

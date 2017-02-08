@@ -75,7 +75,7 @@ void Win32_PaintWindow(
     );
 }
 
-// Fake animation stuff for prototyping
+// Fake gameplay stuff for prototyping
 typedef struct tagAnimationState {
     int32_t XStart;
     int32_t XVelocity;
@@ -86,6 +86,7 @@ typedef struct tagAnimationState {
 } AnimationState;
 
 global_variable AnimationState TestAnimation;
+global_variable bool* KeyDownState = new bool[255];
 
 pixel_t GetFakePixel(int32_t x, int32_t y)
 {
@@ -120,16 +121,61 @@ void Animate()
         }
     }
 
-    if (TestAnimation.XStart < 0 || TestAnimation.XStart + TestAnimation.BlueWidth > VideoBackBuffer.Info.bmiHeader.biWidth)
+    // fake game logic
+    if (KeyDownState['W'] && !KeyDownState['S'])
     {
-        TestAnimation.XVelocity = -1 * TestAnimation.XVelocity;
+        TestAnimation.YVelocity = 1;
     }
-    if (TestAnimation.YStart < 0 || TestAnimation.YStart + TestAnimation.GreenWidth > VideoBackBuffer.Info.bmiHeader.biHeight)
+    else if (!KeyDownState['W'] && KeyDownState['S'])
     {
-        TestAnimation.YVelocity = -1 * TestAnimation.YVelocity;
+        TestAnimation.YVelocity = -1;
+    }
+    else
+    {
+        TestAnimation.YVelocity = 0;
+    }
+
+    if (KeyDownState['D'] && !KeyDownState['A'])
+    {
+        TestAnimation.XVelocity = 1;
+    }
+    else if (!KeyDownState['D'] && KeyDownState['A'])
+    {
+        TestAnimation.XVelocity = -1;
+    }
+    else
+    {
+        TestAnimation.XVelocity = 0;
+    }
+
+    if ((TestAnimation.XStart < 0 && TestAnimation.XVelocity < 0)
+        || (TestAnimation.XStart + TestAnimation.BlueWidth > VideoBackBuffer.Info.bmiHeader.biWidth) && TestAnimation.XVelocity > 0)
+    {
+        TestAnimation.XVelocity = 0;
+    }
+    if ((TestAnimation.YStart < 0 && TestAnimation.YVelocity < 0)
+        || (TestAnimation.YStart + TestAnimation.GreenWidth > VideoBackBuffer.Info.bmiHeader.biHeight) && TestAnimation.YVelocity > 0)
+    {
+        TestAnimation.YVelocity = 0;
     }
     TestAnimation.XStart += TestAnimation.XVelocity;
     TestAnimation.YStart += TestAnimation.YVelocity;
+}
+
+void Win32_HandleKeyDown(WPARAM virtualKeyCode, LPARAM keyStatus)
+{
+    if (virtualKeyCode >= 'A' && virtualKeyCode <= 'Z')
+    {
+        KeyDownState[virtualKeyCode] = true;
+    }
+}
+
+void Win32_HandleKeyUp(WPARAM virtualKeyCode, LPARAM keyStatus)
+{
+    if (virtualKeyCode >= 'A' && virtualKeyCode <= 'Z')
+    {
+        KeyDownState[virtualKeyCode] = false;
+    }
 }
 
 LRESULT WndProc(  
@@ -141,6 +187,12 @@ LRESULT WndProc(
 {    
     switch (uMsg)
     {
+        case WM_KEYDOWN:
+            Win32_HandleKeyDown(wParam, lParam);
+            break;
+        case WM_KEYUP:
+            Win32_HandleKeyUp(wParam, lParam);
+            break;
         case WM_SIZE:
             RECT clientRect;
             GetClientRect(hWnd, &clientRect);
@@ -228,9 +280,9 @@ int WinMain(
 
     IsApplicationRunning = true;
     TestAnimation.XStart = 0;
-    TestAnimation.XVelocity = 1;
+    TestAnimation.XVelocity = 0;
     TestAnimation.YStart = 0;
-    TestAnimation.YVelocity = 1;
+    TestAnimation.YVelocity = 0;
     TestAnimation.BlueWidth = 16;
     TestAnimation.GreenWidth = 32;
 

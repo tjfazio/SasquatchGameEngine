@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "win32_util.h"
+#include "input.cpp"
 
 #define global_variable static
 #define internal_function static
@@ -19,10 +20,31 @@ typedef struct tagBitmapBuffer {
     HBITMAP BitmapHandle;
     HDC DeviceContext;
     void *Memory;
-} BitmapBuffer;
+} Win32_BitmapBuffer;
 
-global_variable BitmapBuffer VideoBackBuffer;
+global_variable Win32_BitmapBuffer VideoBackBuffer;
 global_variable bool IsApplicationRunning;
+
+// Fake gameplay stuff for prototyping
+typedef struct tagAnimationState {
+    int32_t XStart;
+    int32_t XVelocity;
+    int32_t YStart;
+    int32_t YVelocity;
+    int32_t BlueWidth;
+    int32_t GreenWidth;
+} AnimationState;
+
+
+enum VirtualInputCodes : uint8_t {
+    VIC_Up = 0,
+    VIC_Down = 1,
+    VIC_Left = 3,
+    VIC_Right = 4
+};
+
+global_variable AnimationState TestAnimation;
+global_variable SGE_Keyboard g_Keyboard;
 
 void Win32_ResizeWindow(
     HDC targetDeviceContext,
@@ -43,7 +65,7 @@ void Win32_ResizeWindow(
     VideoBackBuffer.Info.bmiHeader.biWidth = Win32_GetRectWidth(clientRect);
     VideoBackBuffer.Info.bmiHeader.biHeight = Win32_GetRectHeight(clientRect);
     VideoBackBuffer.Info.bmiHeader.biPlanes = 1;
-    VideoBackBuffer.Info.bmiHeader.biBitCount = 8*sizeof(pixel_t);
+    VideoBackBuffer.Info.bmiHeader.biBitCount = 8 * sizeof(pixel_t);
     VideoBackBuffer.Info.bmiHeader.biCompression = BI_RGB;
 
     VideoBackBuffer.BitmapHandle = CreateDIBSection(
@@ -54,6 +76,12 @@ void Win32_ResizeWindow(
         0,
         0
     );
+
+    TestAnimation.XStart = 0;
+    TestAnimation.YStart = 0;
+    TestAnimation.XVelocity = 0;
+    TestAnimation.YVelocity = 0;
+    g_Keyboard.ClearState();
 }
 
 void Win32_PaintWindow(
@@ -74,19 +102,6 @@ void Win32_PaintWindow(
         SRCCOPY
     );
 }
-
-// Fake gameplay stuff for prototyping
-typedef struct tagAnimationState {
-    int32_t XStart;
-    int32_t XVelocity;
-    int32_t YStart;
-    int32_t YVelocity;
-    int32_t BlueWidth;
-    int32_t GreenWidth;
-} AnimationState;
-
-global_variable AnimationState TestAnimation;
-global_variable bool* KeyDownState = new bool[255];
 
 pixel_t GetFakePixel(int32_t x, int32_t y)
 {
@@ -122,11 +137,11 @@ void Animate()
     }
 
     // fake game logic
-    if (KeyDownState['W'] && !KeyDownState['S'])
+    if (g_Keyboard.IsSet(VIC_Up) && !g_Keyboard.IsSet(VIC_Down))
     {
         TestAnimation.YVelocity = 1;
     }
-    else if (!KeyDownState['W'] && KeyDownState['S'])
+    else if (g_Keyboard.IsSet(VIC_Down) && !g_Keyboard.IsSet(VIC_Up))
     {
         TestAnimation.YVelocity = -1;
     }
@@ -135,11 +150,11 @@ void Animate()
         TestAnimation.YVelocity = 0;
     }
 
-    if (KeyDownState['D'] && !KeyDownState['A'])
+    if (g_Keyboard.IsSet(VIC_Right) && !g_Keyboard.IsSet(VIC_Left))
     {
         TestAnimation.XVelocity = 1;
     }
-    else if (!KeyDownState['D'] && KeyDownState['A'])
+    else if (g_Keyboard.IsSet(VIC_Left) && !g_Keyboard.IsSet(VIC_Right))
     {
         TestAnimation.XVelocity = -1;
     }
@@ -162,19 +177,11 @@ void Animate()
     TestAnimation.YStart += TestAnimation.YVelocity;
 }
 
-void Win32_HandleKeyDown(WPARAM virtualKeyCode, LPARAM keyStatus)
+void Win32_HandleKey(uint32_t virtualKeyCode, bool isKeyDown)
 {
-    if (virtualKeyCode >= 'A' && virtualKeyCode <= 'Z')
+    if (virtualKeyCode >= 0 && virtualKeyCode <= 0xFF)
     {
-        KeyDownState[virtualKeyCode] = true;
-    }
-}
-
-void Win32_HandleKeyUp(WPARAM virtualKeyCode, LPARAM keyStatus)
-{
-    if (virtualKeyCode >= 'A' && virtualKeyCode <= 'Z')
-    {
-        KeyDownState[virtualKeyCode] = false;
+        g_Keyboard.SetState((uint8_t)virtualKeyCode, isKeyDown);
     }
 }
 
@@ -185,13 +192,15 @@ LRESULT WndProc(
   LPARAM lParam  
 )
 {    
+    uint32_t keyTransitionState = 0;
     switch (uMsg)
     {
         case WM_KEYDOWN:
-            Win32_HandleKeyDown(wParam, lParam);
-            break;
         case WM_KEYUP:
-            Win32_HandleKeyUp(wParam, lParam);
+        case WM_SYSKEYDOWN:
+        case WM_SYSKEYUP:
+            keyTransitionState = (1 << 31) & lParam;
+            Win32_HandleKey((uint32_t)wParam, (keyTransitionState == 0));
             break;
         case WM_SIZE:
             RECT clientRect;
@@ -215,6 +224,14 @@ LRESULT WndProc(
     }
 
     return 0;
+}
+
+void Win32_InitializeDefaultKeyboardMap()
+{
+    g_Keyboard.MapAction(VIC_Up, 'W', VK_UP);
+    g_Keyboard.MapAction(VIC_Down, 'S', VK_DOWN);
+    g_Keyboard.MapAction(VIC_Left, 'A', VK_LEFT);
+    g_Keyboard.MapAction(VIC_Right, 'D', VK_RIGHT);
 }
 
 int WinMain(
@@ -278,6 +295,8 @@ int WinMain(
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
 
+    Win32_InitializeDefaultKeyboardMap();
+
     IsApplicationRunning = true;
     TestAnimation.XStart = 0;
     TestAnimation.XVelocity = 0;
@@ -285,6 +304,9 @@ int WinMain(
     TestAnimation.YVelocity = 0;
     TestAnimation.BlueWidth = 16;
     TestAnimation.GreenWidth = 32;
+
+    // Windows will clean this HDC up when the game exits
+    HDC deviceContext = GetDC(hWnd);
 
     while (IsApplicationRunning)
     {
@@ -303,7 +325,6 @@ int WinMain(
         
         RECT clientRect;
         GetClientRect(hWnd, &clientRect);
-        HDC deviceContext = GetDC(hWnd);
         Win32_PaintWindow(deviceContext, clientRect);
     }
 

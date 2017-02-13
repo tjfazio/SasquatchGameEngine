@@ -3,6 +3,7 @@
 #include <string.h>
 #include <tchar.h>
 #include <stdint.h>
+#include <strsafe.h>
 
 #include "win32_util.h"
 #include "input.cpp"
@@ -22,8 +23,8 @@ typedef struct tagBitmapBuffer {
     void *Memory;
 } Win32_BitmapBuffer;
 
-global_variable Win32_BitmapBuffer VideoBackBuffer;
-global_variable bool IsApplicationRunning;
+global_variable Win32_BitmapBuffer g_VideoBackBuffer;
+global_variable bool g_IsApplicationRunning;
 
 // Fake gameplay stuff for prototyping
 typedef struct tagAnimationState {
@@ -51,28 +52,28 @@ void Win32_ResizeWindow(
     RECT clientRect
     )
 {
-    if (VideoBackBuffer.BitmapHandle)
+    if (g_VideoBackBuffer.BitmapHandle)
     {
-        DeleteObject(VideoBackBuffer.BitmapHandle);
+        DeleteObject(g_VideoBackBuffer.BitmapHandle);
     }
-    if (!VideoBackBuffer.DeviceContext)
+    if (!g_VideoBackBuffer.DeviceContext)
     {
         // TODO(tjfazio) - mess with this for multiple monitors??
-        VideoBackBuffer.DeviceContext = CreateCompatibleDC(targetDeviceContext);
+        g_VideoBackBuffer.DeviceContext = CreateCompatibleDC(targetDeviceContext);
     }
 
-    VideoBackBuffer.Info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    VideoBackBuffer.Info.bmiHeader.biWidth = Win32_GetRectWidth(clientRect);
-    VideoBackBuffer.Info.bmiHeader.biHeight = Win32_GetRectHeight(clientRect);
-    VideoBackBuffer.Info.bmiHeader.biPlanes = 1;
-    VideoBackBuffer.Info.bmiHeader.biBitCount = 8 * sizeof(pixel_t);
-    VideoBackBuffer.Info.bmiHeader.biCompression = BI_RGB;
+    g_VideoBackBuffer.Info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    g_VideoBackBuffer.Info.bmiHeader.biWidth = Win32_GetRectWidth(clientRect);
+    g_VideoBackBuffer.Info.bmiHeader.biHeight = -1 * Win32_GetRectHeight(clientRect);
+    g_VideoBackBuffer.Info.bmiHeader.biPlanes = 1;
+    g_VideoBackBuffer.Info.bmiHeader.biBitCount = 8 * sizeof(pixel_t);
+    g_VideoBackBuffer.Info.bmiHeader.biCompression = BI_RGB;
 
-    VideoBackBuffer.BitmapHandle = CreateDIBSection(
-        VideoBackBuffer.DeviceContext,
-        &VideoBackBuffer.Info,
+    g_VideoBackBuffer.BitmapHandle = CreateDIBSection(
+        g_VideoBackBuffer.DeviceContext,
+        &g_VideoBackBuffer.Info,
         DIB_RGB_COLORS,
-        &VideoBackBuffer.Memory,
+        &g_VideoBackBuffer.Memory,
         0,
         0
     );
@@ -89,14 +90,14 @@ void Win32_PaintWindow(
     RECT paintRect
     )
 {
-    SelectObject(VideoBackBuffer.DeviceContext, VideoBackBuffer.BitmapHandle);
+    SelectObject(g_VideoBackBuffer.DeviceContext, g_VideoBackBuffer.BitmapHandle);
     BitBlt(
         targetDeviceContext,
         paintRect.top,
         paintRect.left,
         Win32_GetRectWidth(paintRect),
         Win32_GetRectHeight(paintRect),
-        VideoBackBuffer.DeviceContext,
+        g_VideoBackBuffer.DeviceContext,
         paintRect.top,
         paintRect.left,
         SRCCOPY
@@ -124,9 +125,9 @@ pixel_t GetFakePixel(int32_t x, int32_t y)
 
 void Animate()
 {
-    int32_t width = VideoBackBuffer.Info.bmiHeader.biWidth;
-    int32_t height = VideoBackBuffer.Info.bmiHeader.biHeight;
-    pixel_t *pixels = (pixel_t *)(VideoBackBuffer.Memory);
+    int32_t width = g_VideoBackBuffer.Info.bmiHeader.biWidth;
+    int32_t height = -1 * g_VideoBackBuffer.Info.bmiHeader.biHeight;
+    pixel_t *pixels = (pixel_t *)(g_VideoBackBuffer.Memory);
 
     for (int y = 0; y < height; y++)
     {
@@ -139,11 +140,11 @@ void Animate()
     // fake game logic
     if (g_Keyboard.IsSet(VIC_Up) && !g_Keyboard.IsSet(VIC_Down))
     {
-        TestAnimation.YVelocity = 1;
+        TestAnimation.YVelocity = -1;
     }
     else if (g_Keyboard.IsSet(VIC_Down) && !g_Keyboard.IsSet(VIC_Up))
     {
-        TestAnimation.YVelocity = -1;
+        TestAnimation.YVelocity = 1;
     }
     else
     {
@@ -164,12 +165,12 @@ void Animate()
     }
 
     if ((TestAnimation.XStart < 0 && TestAnimation.XVelocity < 0)
-        || (TestAnimation.XStart + TestAnimation.BlueWidth > VideoBackBuffer.Info.bmiHeader.biWidth) && TestAnimation.XVelocity > 0)
+        || (TestAnimation.XStart + TestAnimation.BlueWidth > width) && TestAnimation.XVelocity > 0)
     {
         TestAnimation.XVelocity = 0;
     }
     if ((TestAnimation.YStart < 0 && TestAnimation.YVelocity < 0)
-        || (TestAnimation.YStart + TestAnimation.GreenWidth > VideoBackBuffer.Info.bmiHeader.biHeight) && TestAnimation.YVelocity > 0)
+        || (TestAnimation.YStart + TestAnimation.GreenWidth > height) && TestAnimation.YVelocity > 0)
     {
         TestAnimation.YVelocity = 0;
     }
@@ -297,7 +298,7 @@ int WinMain(
 
     Win32_InitializeDefaultKeyboardMap();
 
-    IsApplicationRunning = true;
+    g_IsApplicationRunning = true;
     TestAnimation.XStart = 0;
     TestAnimation.XVelocity = 0;
     TestAnimation.YStart = 0;
@@ -308,14 +309,19 @@ int WinMain(
     // Windows will clean this HDC up when the game exits
     HDC deviceContext = GetDC(hWnd);
 
-    while (IsApplicationRunning)
+    const int perfCounterMessageMaxLength = 255;
+    wchar_t perfCounterMessage[perfCounterMessageMaxLength];
+    size_t perfCounterMessageBufferSize = perfCounterMessageMaxLength * sizeof(wchar_t);
+
+    uint64_t lastTickCount = __rdtsc();
+    while (g_IsApplicationRunning)
     {
         MSG msg;
         while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
         {
             if (msg.message == WM_QUIT)
             {
-                IsApplicationRunning = false;
+                g_IsApplicationRunning = false;
             }
             TranslateMessage(&msg);
             DispatchMessage(&msg);
@@ -326,6 +332,12 @@ int WinMain(
         RECT clientRect;
         GetClientRect(hWnd, &clientRect);
         Win32_PaintWindow(deviceContext, clientRect);
+
+        uint64_t currentTickCount = __rdtsc();
+        uint32_t ticks = (uint32_t)(currentTickCount - lastTickCount);
+        StringCbPrintfW(perfCounterMessage, perfCounterMessageBufferSize, L"%d ticks\n", ticks);
+        OutputDebugStringW(perfCounterMessage);
+        lastTickCount = currentTickCount;
     }
 
     return 0;

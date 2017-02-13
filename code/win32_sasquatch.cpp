@@ -312,8 +312,12 @@ int WinMain(
     const int perfCounterMessageMaxLength = 255;
     wchar_t perfCounterMessage[perfCounterMessageMaxLength];
     size_t perfCounterMessageBufferSize = perfCounterMessageMaxLength * sizeof(wchar_t);
+    
+    LARGE_INTEGER counterFrequency;
+    QueryPerformanceFrequency(&counterFrequency);
 
-    uint64_t lastTickCount = __rdtsc();
+    LARGE_INTEGER lastTime;
+    QueryPerformanceCounter(&lastTime);
     while (g_IsApplicationRunning)
     {
         MSG msg;
@@ -333,11 +337,15 @@ int WinMain(
         GetClientRect(hWnd, &clientRect);
         Win32_PaintWindow(deviceContext, clientRect);
 
-        uint64_t currentTickCount = __rdtsc();
-        uint32_t ticks = (uint32_t)(currentTickCount - lastTickCount);
-        StringCbPrintfW(perfCounterMessage, perfCounterMessageBufferSize, L"%d ticks\n", ticks);
+        LARGE_INTEGER currentTime;
+        QueryPerformanceCounter(&currentTime);
+        int64_t timeDelta = currentTime.QuadPart - lastTime.QuadPart;
+        int64_t elapsedMilliseconds = (timeDelta * 1000) / counterFrequency.QuadPart;
+
+        StringCbPrintfW(perfCounterMessage, perfCounterMessageBufferSize, L"%d ms\n", (int32_t)elapsedMilliseconds);
         OutputDebugStringW(perfCounterMessage);
-        lastTickCount = currentTickCount;
+
+        lastTime = currentTime;
     }
 
     return 0;

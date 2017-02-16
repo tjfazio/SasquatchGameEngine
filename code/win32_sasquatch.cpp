@@ -340,9 +340,10 @@ int WinMain(
         LARGE_INTEGER currentTime;
         QueryPerformanceCounter(&currentTime);
         int64_t timeDelta = currentTime.QuadPart - lastTime.QuadPart;
-        int64_t elapsedMilliseconds = (timeDelta * 1000) / counterFrequency.QuadPart;
+        double elapsedMilliseconds = (timeDelta * 1000.0) / counterFrequency.QuadPart;
+        double fps = 1000.0 / elapsedMilliseconds;
 
-        StringCbPrintfW(perfCounterMessage, perfCounterMessageBufferSize, L"%d ms\n", (int32_t)elapsedMilliseconds);
+        StringCbPrintfW(perfCounterMessage, perfCounterMessageBufferSize, L"%.02f ms - %.02f fps \n", elapsedMilliseconds, fps);
         OutputDebugStringW(perfCounterMessage);
 
         lastTime = currentTime;

@@ -138,6 +138,10 @@ LRESULT WndProc(
 
 void Win32_InitializeDefaultKeyboardMap()
 {
+    g_GameState.Keyboard.MapAction(SGE_Up, 'W', VK_UP);
+    g_GameState.Keyboard.MapAction(SGE_Down, 'S', VK_DOWN);
+    g_GameState.Keyboard.MapAction(SGE_Left, 'A', VK_LEFT);
+    g_GameState.Keyboard.MapAction(SGE_Right, 'D', VK_RIGHT);
 }
 
 int WinMain(

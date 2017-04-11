@@ -2,6 +2,11 @@
 
 #include <stdint.h>
 
+enum ActionCodes : uint8_t {
+    SGE_Up = 0,
+    SGE_Down = 1,
+    SGE_Left = 3,
+    SGE_Right = 4
 };
 
 typedef struct tagKeyboardMap {

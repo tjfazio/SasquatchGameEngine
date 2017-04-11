@@ -27,6 +27,7 @@ void Animate(SGE_GameState *gameState, SGE_VideoBuffer *videoBuffer)
     int32_t height = -1 * videoBuffer->Height;
     pixel_t *pixels = (pixel_t *)(videoBuffer->Memory);
 
+    // Windows-specific logic
     for (int y = 0; y < height; y++)
     {
         for (int x = 0; x < width; x++)
@@ -36,11 +37,11 @@ void Animate(SGE_GameState *gameState, SGE_VideoBuffer *videoBuffer)
     }
 
     // fake game logic
-    if (gameState->Keyboard.IsSet(VIC_Up) && !gameState->Keyboard.IsSet(VIC_Down))
+    if (gameState->Keyboard.IsSet(SGE_Up) && !gameState->Keyboard.IsSet(SGE_Down))
     {
         gameState->TestAnimation.YVelocity = -1;
     }
-    else if (gameState->Keyboard.IsSet(VIC_Down) && !gameState->Keyboard.IsSet(VIC_Up))
+    else if (gameState->Keyboard.IsSet(SGE_Down) && !gameState->Keyboard.IsSet(SGE_Up))
     {
         gameState->TestAnimation.YVelocity = 1;
     }
@@ -49,11 +50,11 @@ void Animate(SGE_GameState *gameState, SGE_VideoBuffer *videoBuffer)
         gameState->TestAnimation.YVelocity = 0;
     }
 
-    if (gameState->Keyboard.IsSet(VIC_Right) && !gameState->Keyboard.IsSet(VIC_Left))
+    if (gameState->Keyboard.IsSet(SGE_Right) && !gameState->Keyboard.IsSet(SGE_Left))
     {
         gameState->TestAnimation.XVelocity = 1;
     }
-    else if (gameState->Keyboard.IsSet(VIC_Left) && !gameState->Keyboard.IsSet(VIC_Right))
+    else if (gameState->Keyboard.IsSet(SGE_Left) && !gameState->Keyboard.IsSet(SGE_Right))
     {
         gameState->TestAnimation.XVelocity = -1;
     }

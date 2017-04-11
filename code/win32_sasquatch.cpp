@@ -6,46 +6,31 @@
 #include <strsafe.h>
 
 #include "win32_util.h"
+
+// Unity build ¯\_(ツ)_/¯
 #include "input.cpp"
+#include "sasquatch.cpp"
 
 #define global_variable static
 #define internal_function static
 #define local_persist static
-#define pixel_t uint32_t
 
 global_variable TCHAR szWindowClass[] = _T("sasquatch");
 global_variable TCHAR szTitle[] = _T("Sasquatch Game Engine");
 
 typedef struct tagBitmapBuffer {
+    int32_t Height;
+    int32_t Width;
+    void *Memory;
     BITMAPINFO Info;
     HBITMAP BitmapHandle;
     HDC DeviceContext;
-    void *Memory;
 } Win32_BitmapBuffer;
 
 global_variable Win32_BitmapBuffer g_VideoBackBuffer;
 global_variable bool g_IsApplicationRunning;
 
-// Fake gameplay stuff for prototyping
-typedef struct tagAnimationState {
-    int32_t XStart;
-    int32_t XVelocity;
-    int32_t YStart;
-    int32_t YVelocity;
-    int32_t BlueWidth;
-    int32_t GreenWidth;
-} AnimationState;
-
-
-enum VirtualInputCodes : uint8_t {
-    VIC_Up = 0,
-    VIC_Down = 1,
-    VIC_Left = 3,
-    VIC_Right = 4
-};
-
-global_variable AnimationState TestAnimation;
-global_variable SGE_Keyboard g_Keyboard;
+global_variable SGE_GameState g_GameState;
 
 void Win32_ResizeWindow(
     HDC targetDeviceContext,
@@ -64,7 +49,9 @@ void Win32_ResizeWindow(
 
     g_VideoBackBuffer.Info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     g_VideoBackBuffer.Info.bmiHeader.biWidth = Win32_GetRectWidth(clientRect);
+    g_VideoBackBuffer.Width = g_VideoBackBuffer.Info.bmiHeader.biWidth;
     g_VideoBackBuffer.Info.bmiHeader.biHeight = -1 * Win32_GetRectHeight(clientRect);
+    g_VideoBackBuffer.Height = g_VideoBackBuffer.Info.bmiHeader.biHeight;
     g_VideoBackBuffer.Info.bmiHeader.biPlanes = 1;
     g_VideoBackBuffer.Info.bmiHeader.biBitCount = 8 * sizeof(pixel_t);
     g_VideoBackBuffer.Info.bmiHeader.biCompression = BI_RGB;
@@ -77,12 +64,8 @@ void Win32_ResizeWindow(
         0,
         0
     );
-
-    TestAnimation.XStart = 0;
-    TestAnimation.YStart = 0;
-    TestAnimation.XVelocity = 0;
-    TestAnimation.YVelocity = 0;
-    g_Keyboard.ClearState();
+    
+    g_GameState.Keyboard.ClearState();
 }
 
 void Win32_PaintWindow(
@@ -104,85 +87,11 @@ void Win32_PaintWindow(
     );
 }
 
-pixel_t GetFakePixel(int32_t x, int32_t y)
-{
-    pixel_t blue = 0;
-    if (x >= TestAnimation.XStart && x < TestAnimation.XStart + TestAnimation.BlueWidth)
-    {
-        blue = 0xFF;
-    }   
-
-    pixel_t green = 0;
-    if (y >= TestAnimation.YStart && y < TestAnimation.YStart + TestAnimation.GreenWidth)
-    {
-        green = 0xFF;
-    }
-
-    pixel_t red = 0;
-
-    return (red << 16) | (green << 8) | blue;
-}
-
-void Animate()
-{
-    int32_t width = g_VideoBackBuffer.Info.bmiHeader.biWidth;
-    int32_t height = -1 * g_VideoBackBuffer.Info.bmiHeader.biHeight;
-    pixel_t *pixels = (pixel_t *)(g_VideoBackBuffer.Memory);
-
-    for (int y = 0; y < height; y++)
-    {
-        for (int x = 0; x < width; x++)
-        {
-            pixels[y * width + x] = GetFakePixel(x, y);
-        }
-    }
-
-    // fake game logic
-    if (g_Keyboard.IsSet(VIC_Up) && !g_Keyboard.IsSet(VIC_Down))
-    {
-        TestAnimation.YVelocity = -1;
-    }
-    else if (g_Keyboard.IsSet(VIC_Down) && !g_Keyboard.IsSet(VIC_Up))
-    {
-        TestAnimation.YVelocity = 1;
-    }
-    else
-    {
-        TestAnimation.YVelocity = 0;
-    }
-
-    if (g_Keyboard.IsSet(VIC_Right) && !g_Keyboard.IsSet(VIC_Left))
-    {
-        TestAnimation.XVelocity = 1;
-    }
-    else if (g_Keyboard.IsSet(VIC_Left) && !g_Keyboard.IsSet(VIC_Right))
-    {
-        TestAnimation.XVelocity = -1;
-    }
-    else
-    {
-        TestAnimation.XVelocity = 0;
-    }
-
-    if ((TestAnimation.XStart < 0 && TestAnimation.XVelocity < 0)
-        || (TestAnimation.XStart + TestAnimation.BlueWidth > width) && TestAnimation.XVelocity > 0)
-    {
-        TestAnimation.XVelocity = 0;
-    }
-    if ((TestAnimation.YStart < 0 && TestAnimation.YVelocity < 0)
-        || (TestAnimation.YStart + TestAnimation.GreenWidth > height) && TestAnimation.YVelocity > 0)
-    {
-        TestAnimation.YVelocity = 0;
-    }
-    TestAnimation.XStart += TestAnimation.XVelocity;
-    TestAnimation.YStart += TestAnimation.YVelocity;
-}
-
 void Win32_HandleKey(uint32_t virtualKeyCode, bool isKeyDown)
 {
     if (virtualKeyCode >= 0 && virtualKeyCode <= 0xFF)
     {
-        g_Keyboard.SetState((uint8_t)virtualKeyCode, isKeyDown);
+        g_GameState.Keyboard.SetState((uint8_t)virtualKeyCode, isKeyDown);
     }
 }
 
@@ -229,10 +138,6 @@ LRESULT WndProc(
 
 void Win32_InitializeDefaultKeyboardMap()
 {
-    g_Keyboard.MapAction(VIC_Up, 'W', VK_UP);
-    g_Keyboard.MapAction(VIC_Down, 'S', VK_DOWN);
-    g_Keyboard.MapAction(VIC_Left, 'A', VK_LEFT);
-    g_Keyboard.MapAction(VIC_Right, 'D', VK_RIGHT);
 }
 
 int WinMain(
@@ -299,12 +204,7 @@ int WinMain(
     Win32_InitializeDefaultKeyboardMap();
 
     g_IsApplicationRunning = true;
-    TestAnimation.XStart = 0;
-    TestAnimation.XVelocity = 0;
-    TestAnimation.YStart = 0;
-    TestAnimation.YVelocity = 0;
-    TestAnimation.BlueWidth = 16;
-    TestAnimation.GreenWidth = 32;
+    SGE_Init(&g_GameState);
 
     // Windows will clean this HDC up when the game exits
     HDC deviceContext = GetDC(hWnd);
@@ -331,7 +231,7 @@ int WinMain(
             DispatchMessage(&msg);
         }
 
-        Animate();
+        SGE_UpdateAndRender(&g_GameState, (SGE_VideoBuffer *)&g_VideoBackBuffer);
         
         RECT clientRect;
         GetClientRect(hWnd, &clientRect);

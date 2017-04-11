@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+};
+
 typedef struct tagKeyboardMap {
     uint8_t Primary[255];
     uint8_t Secondary[255];

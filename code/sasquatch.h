@@ -5,6 +5,7 @@
 #include "input.h"
 
 #define pixel_t uint32_t
+#define sample_t int16_t
 
 typedef struct tagVideoBuffer {
     int32_t Height;

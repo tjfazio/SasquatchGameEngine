@@ -53,6 +53,8 @@ Temporary Items
 
 # VSCode weirdness
 .vscode
+*.ipch
+.vs
 
 # Build output
 *.pdb

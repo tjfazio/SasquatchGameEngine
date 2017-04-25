@@ -1,6 +1,9 @@
+#include <assert.h>
+
+#include "common.h"
 #include "sasquatch.h"
 
-pixel_t GetFakePixel(SGE_GameState *gameState, int32_t x, int32_t y)
+internal pixel_t GetFakePixel(SGE_GameState *gameState, int32_t x, int32_t y)
 {
     pixel_t blue = 0;
     if (x >= gameState->TestAnimation.XStart
@@ -21,18 +24,19 @@ pixel_t GetFakePixel(SGE_GameState *gameState, int32_t x, int32_t y)
     return (red << 16) | (green << 8) | blue;
 }
 
-void Animate(SGE_GameState *gameState, SGE_VideoBuffer *videoBuffer)
+internal void Animate(SGE_GameState *gameState, SGE_VideoBuffer *videoBuffer)
 {
     int32_t width = videoBuffer->Width;
     int32_t height = -1 * videoBuffer->Height;
-    pixel_t *pixels = (pixel_t *)(videoBuffer->Memory);
+    int32_t stride = videoBuffer->Stride;
+    pixel_t *pixels = videoBuffer->Memory;
 
     // Windows-specific logic
     for (int y = 0; y < height; y++)
     {
         for (int x = 0; x < width; x++)
         {
-            pixels[y * width + x] = GetFakePixel(gameState, x, y);
+            pixels[y * stride + x] = GetFakePixel(gameState, x, y);
         }
     }
 
@@ -90,5 +94,30 @@ void SGE_Init(SGE_GameState *gameState)
 
 void SGE_UpdateAndRender(SGE_GameState *gameState, SGE_VideoBuffer *videoBuffer)
 {
+    assert(gameState != NULL);
+    assert(videoBuffer != NULL);
+
     Animate(gameState, videoBuffer);
+}
+
+// fake game state
+global_variable uint32_t g_SamplePosition = 0;
+global_variable int32_t g_WaveFreq = 440;
+
+void SGE_GetSoundSamples(SGE_SoundBuffer *soundBuffer)
+{
+    assert(soundBuffer != NULL);
+    assert(soundBuffer->BufferSize >= (soundBuffer->NumChannels * soundBuffer->SampleCount * sizeof(sample_t)));
+    const sample_t amp = 5000;
+    
+    int32_t channelSampleCount = soundBuffer->NumChannels * soundBuffer->SampleCount;
+    for (int32_t i = 0; i < channelSampleCount; i++)
+    {
+        int32_t sampleWaveLength = soundBuffer->SamplesPerSecond / g_WaveFreq;
+        // flip signal every 2 * half_wavelength [L'R'L'R'L,R,L,R,]
+        int32_t sampleIndex = g_SamplePosition / sampleWaveLength;
+        sample_t sample = ((sampleIndex % 2) == 0) ? amp : -amp;
+        soundBuffer->Memory[i] = sample;
+        g_SamplePosition++;
+    }
 }

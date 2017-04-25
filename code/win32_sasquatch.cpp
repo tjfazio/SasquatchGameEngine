@@ -5,16 +5,14 @@
 #include <stdint.h>
 #include <strsafe.h>
 #include <dsound.h>
+#include <assert.h>
 
+#include "common.h"
 #include "win32_util.h"
 
 // Unity build ¯\_(ツ)_/¯
 #include "input.cpp"
 #include "sasquatch.cpp"
-
-#define global_variable static
-#define internal_function static
-#define local_persist static
 
 // function pointers for DLLs
 typedef HRESULT (*DirectSoundCreate_T)(LPCGUID lpcGuidDevice, LPDIRECTSOUND * ppDS, LPUNKNOWN pUnkOuter);
@@ -23,11 +21,13 @@ global_variable TCHAR szWindowClass[] = _T("sasquatch");
 global_variable TCHAR szTitle[] = _T("Sasquatch Game Engine");
 
 const int32_t Win32_SoundSamplesPerSecond = 44100;
-const int32_t Win32_SoundBufferSize = 2 * 4 * Win32_SoundSamplesPerSecond;
+const int32_t Win32_NumChannels = 2;
+const int32_t Win32_SoundBufferSize = 2 * Win32_NumChannels * sizeof(sample_t) * Win32_SoundSamplesPerSecond;
 
 typedef struct tagBitmapBuffer {
     int32_t Height;
     int32_t Width;
+    int32_t Stride;
     void *Memory;
     BITMAPINFO Info;
     HBITMAP BitmapHandle;
@@ -35,18 +35,21 @@ typedef struct tagBitmapBuffer {
 } Win32_BitmapBuffer;
 
 typedef struct tagSoundBuffer {
-    uint32_t SecondaryBufferSize;
+    int32_t SoundBufferSize;
+    int32_t Cursor;
+    int32_t LatencySampleCount;
     LPDIRECTSOUNDBUFFER PrimaryBuffer;
     LPDIRECTSOUNDBUFFER SecondaryBuffer;
 } Win32_SoundBuffer;
 
 global_variable bool g_IsApplicationRunning;
 global_variable Win32_BitmapBuffer g_VideoBackBuffer;
-global_variable Win32_SoundBuffer g_SoundBuffer;
+global_variable Win32_SoundBuffer g_Win32SoundOutput;
 
 global_variable SGE_GameState g_GameState;
+global_variable SGE_SoundBuffer g_SoundBuffer;
 
-internal_function void Win32_ResizeWindow(
+internal void Win32_ResizeWindow(
     HDC targetDeviceContext,
     RECT clientRect
     )
@@ -64,6 +67,7 @@ internal_function void Win32_ResizeWindow(
     g_VideoBackBuffer.Info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     g_VideoBackBuffer.Info.bmiHeader.biWidth = Win32_GetRectWidth(clientRect);
     g_VideoBackBuffer.Width = g_VideoBackBuffer.Info.bmiHeader.biWidth;
+    g_VideoBackBuffer.Stride = g_VideoBackBuffer.Width;
     g_VideoBackBuffer.Info.bmiHeader.biHeight = -1 * Win32_GetRectHeight(clientRect);
     g_VideoBackBuffer.Height = g_VideoBackBuffer.Info.bmiHeader.biHeight;
     g_VideoBackBuffer.Info.bmiHeader.biPlanes = 1;
@@ -82,7 +86,7 @@ internal_function void Win32_ResizeWindow(
     g_GameState.Keyboard.ClearState();
 }
 
-internal_function void Win32_PaintWindow(
+internal void Win32_PaintWindow(
     HDC targetDeviceContext,
     RECT paintRect
     )
@@ -150,10 +154,11 @@ LRESULT WndProc(
     return 0;
 }
 
-internal_function void Win32_InitializeDirectSound(
+internal void Win32_InitializeDirectSound(
     HWND hwnd,
     int32_t soundBufferSize,
-    int32_t samplesPerSecond)
+    int32_t samplesPerSecond,
+    int32_t samplesPerFrame)
 {
     HMODULE directSoundLib = LoadLibrary("dsound.dll");
     if (!directSoundLib)
@@ -182,7 +187,7 @@ internal_function void Win32_InitializeDirectSound(
     primaryBufferDescription.dwReserved = 0;
     primaryBufferDescription.lpwfxFormat = NULL;
     primaryBufferDescription.guid3DAlgorithm = GUID_NULL;
-    if (!SUCCEEDED(directSound->CreateSoundBuffer(&primaryBufferDescription, &g_SoundBuffer.PrimaryBuffer, NULL)))
+    if (!SUCCEEDED(directSound->CreateSoundBuffer(&primaryBufferDescription, &g_Win32SoundOutput.PrimaryBuffer, NULL)))
     {
         // log error
         return;
@@ -190,13 +195,13 @@ internal_function void Win32_InitializeDirectSound(
 
     WAVEFORMATEX waveFormat = {};
     waveFormat.wFormatTag = WAVE_FORMAT_PCM;
-    waveFormat.nChannels = 2;
+    waveFormat.nChannels = Win32_NumChannels;
     waveFormat.nSamplesPerSec = samplesPerSecond;
-    waveFormat.wBitsPerSample = 16;
+    waveFormat.wBitsPerSample = sizeof(sample_t) * 8;
     waveFormat.nBlockAlign = (waveFormat.nChannels * waveFormat.wBitsPerSample) / 8;
     waveFormat.nAvgBytesPerSec = (waveFormat.nSamplesPerSec * waveFormat.nBlockAlign);
     waveFormat.cbSize = 0;
-    if (!SUCCEEDED(g_SoundBuffer.PrimaryBuffer->SetFormat(&waveFormat)))
+    if (!SUCCEEDED(g_Win32SoundOutput.PrimaryBuffer->SetFormat(&waveFormat)))
     {
         // log error
         return;
@@ -209,15 +214,16 @@ internal_function void Win32_InitializeDirectSound(
     secondaryBufferDescription.dwReserved = 0;
     secondaryBufferDescription.lpwfxFormat = &waveFormat;
     secondaryBufferDescription.guid3DAlgorithm = GUID_NULL;
-    if (!SUCCEEDED(directSound->CreateSoundBuffer(&secondaryBufferDescription, &g_SoundBuffer.SecondaryBuffer, NULL)))
+    if (!SUCCEEDED(directSound->CreateSoundBuffer(&secondaryBufferDescription, &g_Win32SoundOutput.SecondaryBuffer, NULL)))
     {
         // log error
         return;
     }
-    g_SoundBuffer.SecondaryBufferSize = soundBufferSize;
+    g_Win32SoundOutput.SoundBufferSize = soundBufferSize;
+    g_Win32SoundOutput.LatencySampleCount = 2 * samplesPerFrame;
 }
 
-internal_function void Win32_InitializeDefaultKeyboardMap()
+internal void Win32_InitializeDefaultKeyboardMap()
 {
     g_GameState.Keyboard.MapAction(SGE_Up, 'W', VK_UP);
     g_GameState.Keyboard.MapAction(SGE_Down, 'S', VK_DOWN);
@@ -226,7 +232,10 @@ internal_function void Win32_InitializeDefaultKeyboardMap()
 }
 
 const uint32_t Win32_WaveFreq = 440;
-const uint32_t Win32_Wavelength = Win32_SoundSamplesPerSecond / Win32_WaveFreq; 
+const uint32_t Win32_Wavelength = Win32_SoundSamplesPerSecond / Win32_WaveFreq;
+
+const uint64_t Win32_PlatformMemorySize = KILOBYTES(16);
+global_variable void *g_PlatformMemory;
 
 int WinMain(
     HINSTANCE hInstance,
@@ -250,6 +259,9 @@ int WinMain(
     wcex.lpszClassName = szWindowClass;
     wcex.hIconSm = NULL;
 
+    int32_t windowWidth = 1280;
+    int32_t windowHeight = 800;
+
     if (!RegisterClassEx(&wcex))
     {
         MessageBox(NULL,
@@ -267,8 +279,8 @@ int WinMain(
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
-        500,
-        500,
+        windowWidth,
+        windowHeight,
         NULL,
         NULL,
         hInstance,
@@ -288,12 +300,26 @@ int WinMain(
     
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
+    
+    int32_t frameRate = 30; // Hz
+    real32_t frameLength = 1.0 / frameRate; // Seconds
+    g_PlatformMemory = VirtualAlloc(NULL, Win32_PlatformMemorySize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
 
-    Win32_InitializeDirectSound(hWnd, Win32_SoundBufferSize, Win32_SoundSamplesPerSecond);
+    int32_t soundFrameRate = frameRate;
+    int32_t samplesPerFrame = Win32_SoundSamplesPerSecond / soundFrameRate;
+    uint64_t soundBufferSize = Win32_NumChannels * sizeof(sample_t) * samplesPerFrame;
+    assert(Win32_PlatformMemorySize > soundBufferSize);
+
+    Win32_InitializeDirectSound(hWnd, Win32_SoundBufferSize, Win32_SoundSamplesPerSecond, samplesPerFrame);
+    g_SoundBuffer.SamplesPerSecond = Win32_SoundSamplesPerSecond;
+    g_SoundBuffer.NumChannels = Win32_NumChannels;
+    g_SoundBuffer.Memory = (sample_t *)g_PlatformMemory;
+    g_SoundBuffer.BufferSize = soundBufferSize;
+    bool soundStarted = false;
+
     Win32_InitializeDefaultKeyboardMap();
 
     g_IsApplicationRunning = true;
-    bool soundStarted = false;
     SGE_Init(&g_GameState);
 
     // Windows will clean this HDC up when the game exits
@@ -325,67 +351,70 @@ int WinMain(
 
         DWORD playCursor;
         DWORD writeCursor;
-        if(!soundStarted)
+        if(SUCCEEDED(g_Win32SoundOutput.SecondaryBuffer->GetCurrentPosition(&playCursor, &writeCursor)))
         {
-            if(SUCCEEDED(g_SoundBuffer.SecondaryBuffer->GetCurrentPosition(&playCursor, &writeCursor)))
+            if (!soundStarted)
             {
-                uint32_t bytesToLock;
-                if (playCursor > writeCursor)
+                g_Win32SoundOutput.Cursor = writeCursor;
+            }
+            int32_t targetCursor = (playCursor + g_Win32SoundOutput.LatencySampleCount * sizeof(sample_t)) % g_Win32SoundOutput.SoundBufferSize;
+            int32_t bytesToWrite;
+            if (targetCursor > g_Win32SoundOutput.Cursor)
+            {
+                bytesToWrite = targetCursor - g_Win32SoundOutput.Cursor;
+            }
+            else
+            {
+                bytesToWrite = g_Win32SoundOutput.SoundBufferSize - g_Win32SoundOutput.Cursor + targetCursor;
+            }
+            if (bytesToWrite > g_SoundBuffer.BufferSize)
+            {
+                bytesToWrite = g_SoundBuffer.BufferSize;
+            }
+
+            void *soundBufferSection1;
+            DWORD soundBytes1;
+            void *soundBufferSection2;
+            DWORD soundBytes2;
+            HRESULT lockResult = g_Win32SoundOutput.SecondaryBuffer->Lock(
+                g_Win32SoundOutput.Cursor, bytesToWrite, 
+                &soundBufferSection1, &soundBytes1, 
+                &soundBufferSection2, &soundBytes2,
+                0);
+            if(SUCCEEDED(lockResult))
+            {
+                g_SoundBuffer.SampleCount = bytesToWrite / (g_SoundBuffer.NumChannels * sizeof(sample_t));
+                SGE_GetSoundSamples(&g_SoundBuffer);
+                int32_t sampleIndex = 0;
+                int32_t section1SampleCount = soundBytes1 / sizeof(sample_t);
+                sample_t *section1 = (sample_t *)soundBufferSection1;
+                for (int i = 0; i < section1SampleCount; i++)
                 {
-                    bytesToLock = playCursor - writeCursor;
+                    section1[i] = g_SoundBuffer.Memory[sampleIndex];
+                    sampleIndex++;
                 }
-                else
+
+                sample_t *section2 = (sample_t *)soundBufferSection2;
+                int32_t section2SampleCount = soundBytes2 / sizeof(sample_t);
+                for (int i = 0; i < section2SampleCount; i++)
                 {
-                    bytesToLock = g_SoundBuffer.SecondaryBufferSize - writeCursor + playCursor;
+                    section2[i] = g_SoundBuffer.Memory[sampleIndex];
+                    sampleIndex++;
                 }
 
-                void *soundBufferSection1;
-                DWORD soundBytes1;
-                void *soundBufferSection2;
-                DWORD soundBytes2;
-                DWORD samplePosition = writeCursor;
-                HRESULT lockResult = g_SoundBuffer.SecondaryBuffer->Lock(
-                    writeCursor, bytesToLock, 
-                    &soundBufferSection1, &soundBytes1, 
-                    &soundBufferSection2, &soundBytes2,
-                    0);
-                if(SUCCEEDED(lockResult))
+                g_Win32SoundOutput.Cursor = targetCursor;
+
+                if (!SUCCEEDED(g_Win32SoundOutput.SecondaryBuffer->Unlock(
+                        soundBufferSection1, soundBytes1,
+                        soundBufferSection2, soundBytes2)))
                 {
-                    sample_t *section1 = (sample_t *)soundBufferSection1;
-                    sample_t amp = 5000;
-                    for (int i = 0; i < soundBytes1; i += sizeof(sample_t))
-                    {
-                        // flip signal every 2 * half_wavelength [L'R'L'R'L,R,L,R,]
-                        uint32_t sampleIndex = samplePosition / Win32_Wavelength;
-                        sample_t sample = ((sampleIndex % 2) == 0) ? amp : -amp;
-                        *(section1++) = sample;
-                        samplePosition = samplePosition + 1;
-                        if (samplePosition >= g_SoundBuffer.SecondaryBufferSize) samplePosition = 0;
-                    }
+                    // log error - I don't think we can do much in this case
+                }
 
-                    sample_t *section2 = (sample_t *)soundBufferSection2;
-                    for (int i = 0; i < soundBytes2; i += sizeof(sample_t))
-                    {
-                        // flip signal every 2 * half_wavelength [L'R'L'R'L,R,L,R,]
-                        uint32_t sampleIndex = samplePosition / Win32_Wavelength;
-                        sample_t sample = ((sampleIndex % 2) == 0) ? amp : -amp;
-                        *(section2++) = sample;
-                        samplePosition = samplePosition + 1;
-                        if (samplePosition >= g_SoundBuffer.SecondaryBufferSize) samplePosition = 0;
-                    }
-
-                    if (!SUCCEEDED(g_SoundBuffer.SecondaryBuffer->Unlock(
-                            soundBufferSection1, soundBytes1,
-                            soundBufferSection2, soundBytes2)))
-                    {
-                        // log error - I don't think we can do much in this case
-                    }
-
-                    if (!soundStarted)
-                    {
-                        g_SoundBuffer.SecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
-                        soundStarted = true;
-                    }
+                if (!soundStarted)
+                {
+                    g_Win32SoundOutput.SecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
+                    soundStarted = true;
                 }
             }
         }
@@ -397,13 +426,19 @@ int WinMain(
         LARGE_INTEGER currentTime;
         QueryPerformanceCounter(&currentTime);
         int64_t timeDelta = currentTime.QuadPart - lastTime.QuadPart;
-        double elapsedMilliseconds = (timeDelta * 1000.0) / counterFrequency.QuadPart;
-        double fps = 1000.0 / elapsedMilliseconds;
+        real32_t elapsedSeconds = ((real32_t)timeDelta) / counterFrequency.QuadPart; 
+        real32_t elapsedMilliseconds = elapsedSeconds * 1000.0;
+        real32_t fps = 1.0 / elapsedSeconds;
+        lastTime = currentTime;
+
+        if (elapsedSeconds < frameLength)
+        {
+            real32_t remainingFrameSeconds = frameLength - elapsedSeconds;
+            Sleep(remainingFrameSeconds * 1000);
+        }
 
         StringCbPrintfW(perfCounterMessage, perfCounterMessageBufferSize, L"%.02f ms - %.02f fps \n", elapsedMilliseconds, fps);
         OutputDebugStringW(perfCounterMessage);
-
-        lastTime = currentTime;
     }
 
     return 0;

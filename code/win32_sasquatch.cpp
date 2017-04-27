@@ -38,6 +38,7 @@ typedef struct tagSoundBuffer {
     int32_t SoundBufferSize;
     int32_t Cursor;
     int32_t LatencySampleCount;
+    bool IsSoundValid;
     LPDIRECTSOUNDBUFFER PrimaryBuffer;
     LPDIRECTSOUNDBUFFER SecondaryBuffer;
 } Win32_SoundBuffer;
@@ -157,8 +158,7 @@ LRESULT WndProc(
 internal void Win32_InitializeDirectSound(
     HWND hwnd,
     int32_t soundBufferSize,
-    int32_t samplesPerSecond,
-    int32_t samplesPerFrame)
+    int32_t samplesPerSecond)
 {
     HMODULE directSoundLib = LoadLibrary("dsound.dll");
     if (!directSoundLib)
@@ -220,7 +220,35 @@ internal void Win32_InitializeDirectSound(
         return;
     }
     g_Win32SoundOutput.SoundBufferSize = soundBufferSize;
-    g_Win32SoundOutput.LatencySampleCount = 2 * samplesPerFrame;
+}
+
+internal void Win32_ClearSoundBuffer(Win32_SoundBuffer *soundBuffer)
+{
+    void *soundBufferSection1;
+    DWORD soundBytes1;
+    void *soundBufferSection2;
+    DWORD soundBytes2;
+    HRESULT lockResult = soundBuffer->SecondaryBuffer->Lock(
+                0, soundBuffer->SoundBufferSize,
+                &soundBufferSection1, &soundBytes1, 
+                &soundBufferSection2, &soundBytes2,
+                0);
+    if (SUCCEEDED(lockResult))
+    {
+        assert(soundBytes2 == 0);
+        for (int i = 0; i < soundBytes1; i++)
+        {
+            (*(uint8_t*)soundBufferSection1) = 0;
+        }
+        HRESULT unlockResult =
+            g_Win32SoundOutput.SecondaryBuffer->Unlock(
+                soundBufferSection1, soundBytes1,
+                soundBufferSection2, soundBytes2);
+        if (!SUCCEEDED(unlockResult))
+        {
+            // log
+        }
+    }
 }
 
 internal void Win32_InitializeDefaultKeyboardMap()
@@ -229,12 +257,104 @@ internal void Win32_InitializeDefaultKeyboardMap()
     g_GameState.Keyboard.MapAction(SGE_Down, 'S', VK_DOWN);
     g_GameState.Keyboard.MapAction(SGE_Left, 'A', VK_LEFT);
     g_GameState.Keyboard.MapAction(SGE_Right, 'D', VK_RIGHT);
+    g_GameState.Keyboard.MapAction(SGE_Action1, 'Q', VK_SPACE);
 }
 
 const uint32_t Win32_WaveFreq = 440;
 const uint32_t Win32_Wavelength = Win32_SoundSamplesPerSecond / Win32_WaveFreq;
 
-const uint64_t Win32_PlatformMemorySize = KILOBYTES(16);
+internal void Win32_CopySoundSamples(
+    SGE_GameState *gameState,
+    Win32_SoundBuffer *soundOutput, 
+    SGE_SoundBuffer *gameSoundBuffer)
+{
+    const int debugMessageMaxLength = 255;
+    wchar_t debugMessage[debugMessageMaxLength];
+    size_t debugMessageBufferSize = debugMessageMaxLength * sizeof(wchar_t);
+
+    DWORD playCursor;
+    DWORD writeCursor;
+    if(SUCCEEDED(soundOutput->SecondaryBuffer->GetCurrentPosition(&playCursor, &writeCursor)))
+    {
+        if (!soundOutput->IsSoundValid)
+        {
+            OutputDebugStringW(L"Resetting write cursor\n");
+            soundOutput->Cursor = writeCursor;
+        }
+
+        int32_t bytesToWrite = soundOutput->LatencySampleCount * sizeof(sample_t) * gameSoundBuffer->NumChannels;
+        int32_t targetCursor = (soundOutput->Cursor + bytesToWrite) % soundOutput->SoundBufferSize; 
+        StringCbPrintfW(debugMessage, debugMessageBufferSize, L"Sound bytes to write: %d\n", bytesToWrite);
+        OutputDebugStringW(debugMessage);
+
+        assert(bytesToWrite % (gameSoundBuffer->NumChannels * sizeof(sample_t)) == 0);
+        gameSoundBuffer->SampleCount = bytesToWrite / (gameSoundBuffer->NumChannels * sizeof(sample_t));
+        SGE_GetSoundSamples(gameState, gameSoundBuffer);
+
+        void *soundBufferSection1;
+        DWORD soundBytes1;
+        void *soundBufferSection2;
+        DWORD soundBytes2;
+        HRESULT lockResult = soundOutput->SecondaryBuffer->Lock(
+            soundOutput->Cursor, bytesToWrite,
+            &soundBufferSection1, &soundBytes1, 
+            &soundBufferSection2, &soundBytes2,
+            0);
+        if(SUCCEEDED(lockResult))
+        {
+            int32_t sampleIndex = 0;
+            int32_t section1SampleCount = soundBytes1 / sizeof(sample_t);
+            sample_t *section1 = (sample_t *)soundBufferSection1;
+            for (int i = 0; i < section1SampleCount; i++)
+            {
+                section1[i] = gameSoundBuffer->Memory[sampleIndex];
+                sampleIndex++;
+            }
+
+            sample_t *section2 = (sample_t *)soundBufferSection2;
+            int32_t section2SampleCount = soundBytes2 / sizeof(sample_t);
+            for (int i = 0; i < section2SampleCount; i++)
+            {
+                section2[i] = gameSoundBuffer->Memory[sampleIndex];
+                sampleIndex++;
+            }
+
+            soundOutput->Cursor = targetCursor;
+
+            if (!SUCCEEDED(soundOutput->SecondaryBuffer->Unlock(
+                    soundBufferSection1, soundBytes1,
+                    soundBufferSection2, soundBytes2)))
+            {                    
+                OutputDebugStringW(L"Sound bytes unlock failed");
+                soundOutput->IsSoundValid = false;
+            }
+
+            soundOutput->IsSoundValid = true;
+        }
+        else
+        {                    
+            OutputDebugStringW(L"Sound bytes lock failed");
+            soundOutput->IsSoundValid = false;
+        }
+    }
+    else
+    {
+        OutputDebugStringW(L"Get sound cursors failed");
+    }
+}
+
+internal real32_t Win32_GetElapsedSeconds(LARGE_INTEGER lastTime)
+{
+    LARGE_INTEGER counterFrequency;
+    QueryPerformanceFrequency(&counterFrequency);
+    LARGE_INTEGER currentTime;
+    QueryPerformanceCounter(&currentTime);
+    int64_t timeDelta = currentTime.QuadPart - lastTime.QuadPart;
+    real32_t elapsedSeconds = ((real32_t)timeDelta) / counterFrequency.QuadPart;
+    return elapsedSeconds;
+}
+
+const uint64_t Win32_PlatformMemorySize = KILOBYTES(64);
 global_variable void *g_PlatformMemory;
 
 int WinMain(
@@ -299,38 +419,38 @@ int WinMain(
     }
     
     ShowWindow(hWnd, nCmdShow);
-    UpdateWindow(hWnd);
+    UpdateWindow(hWnd);    
+
+    g_IsApplicationRunning = true;
     
     int32_t frameRate = 30; // Hz
     real32_t frameLength = 1.0 / frameRate; // Seconds
     g_PlatformMemory = VirtualAlloc(NULL, Win32_PlatformMemorySize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
 
-    int32_t soundFrameRate = frameRate;
-    int32_t samplesPerFrame = Win32_SoundSamplesPerSecond / soundFrameRate;
-    uint64_t soundBufferSize = Win32_NumChannels * sizeof(sample_t) * samplesPerFrame;
+    Win32_InitializeDirectSound(hWnd, Win32_SoundBufferSize, Win32_SoundSamplesPerSecond);
+    Win32_ClearSoundBuffer(&g_Win32SoundOutput);
+    g_Win32SoundOutput.SecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
+
+    int32_t samplesPerFrame = Win32_SoundSamplesPerSecond / frameRate;
+    // Only fill up to two frames ahead of the play cursor, but buffer up to 4 frames in case we lag behind
+    uint64_t soundBufferSize = 4 * Win32_NumChannels * sizeof(sample_t) * samplesPerFrame;    
+    g_Win32SoundOutput.LatencySampleCount = samplesPerFrame;
     assert(Win32_PlatformMemorySize > soundBufferSize);
 
-    Win32_InitializeDirectSound(hWnd, Win32_SoundBufferSize, Win32_SoundSamplesPerSecond, samplesPerFrame);
     g_SoundBuffer.SamplesPerSecond = Win32_SoundSamplesPerSecond;
     g_SoundBuffer.NumChannels = Win32_NumChannels;
     g_SoundBuffer.Memory = (sample_t *)g_PlatformMemory;
     g_SoundBuffer.BufferSize = soundBufferSize;
-    bool soundStarted = false;
 
     Win32_InitializeDefaultKeyboardMap();
-
-    g_IsApplicationRunning = true;
     SGE_Init(&g_GameState);
 
     // Windows will clean this HDC up when the game exits
     HDC deviceContext = GetDC(hWnd);
 
-    const int perfCounterMessageMaxLength = 255;
-    wchar_t perfCounterMessage[perfCounterMessageMaxLength];
-    size_t perfCounterMessageBufferSize = perfCounterMessageMaxLength * sizeof(wchar_t);
-
-    LARGE_INTEGER counterFrequency;
-    QueryPerformanceFrequency(&counterFrequency);
+    const int debugMessageMaxLength = 255;
+    wchar_t debugMessage[debugMessageMaxLength];
+    size_t debugMessageBufferSize = debugMessageMaxLength * sizeof(wchar_t);
 
     LARGE_INTEGER lastTime;
     QueryPerformanceCounter(&lastTime);
@@ -347,98 +467,28 @@ int WinMain(
             DispatchMessage(&msg);
         }
 
-        SGE_UpdateAndRender(&g_GameState, (SGE_VideoBuffer *)&g_VideoBackBuffer);
-
-        DWORD playCursor;
-        DWORD writeCursor;
-        if(SUCCEEDED(g_Win32SoundOutput.SecondaryBuffer->GetCurrentPosition(&playCursor, &writeCursor)))
-        {
-            if (!soundStarted)
-            {
-                g_Win32SoundOutput.Cursor = writeCursor;
-            }
-            int32_t targetCursor = (playCursor + g_Win32SoundOutput.LatencySampleCount * sizeof(sample_t)) % g_Win32SoundOutput.SoundBufferSize;
-            int32_t bytesToWrite;
-            if (targetCursor > g_Win32SoundOutput.Cursor)
-            {
-                bytesToWrite = targetCursor - g_Win32SoundOutput.Cursor;
-            }
-            else
-            {
-                bytesToWrite = g_Win32SoundOutput.SoundBufferSize - g_Win32SoundOutput.Cursor + targetCursor;
-            }
-            if (bytesToWrite > g_SoundBuffer.BufferSize)
-            {
-                bytesToWrite = g_SoundBuffer.BufferSize;
-            }
-
-            void *soundBufferSection1;
-            DWORD soundBytes1;
-            void *soundBufferSection2;
-            DWORD soundBytes2;
-            HRESULT lockResult = g_Win32SoundOutput.SecondaryBuffer->Lock(
-                g_Win32SoundOutput.Cursor, bytesToWrite, 
-                &soundBufferSection1, &soundBytes1, 
-                &soundBufferSection2, &soundBytes2,
-                0);
-            if(SUCCEEDED(lockResult))
-            {
-                g_SoundBuffer.SampleCount = bytesToWrite / (g_SoundBuffer.NumChannels * sizeof(sample_t));
-                SGE_GetSoundSamples(&g_SoundBuffer);
-                int32_t sampleIndex = 0;
-                int32_t section1SampleCount = soundBytes1 / sizeof(sample_t);
-                sample_t *section1 = (sample_t *)soundBufferSection1;
-                for (int i = 0; i < section1SampleCount; i++)
-                {
-                    section1[i] = g_SoundBuffer.Memory[sampleIndex];
-                    sampleIndex++;
-                }
-
-                sample_t *section2 = (sample_t *)soundBufferSection2;
-                int32_t section2SampleCount = soundBytes2 / sizeof(sample_t);
-                for (int i = 0; i < section2SampleCount; i++)
-                {
-                    section2[i] = g_SoundBuffer.Memory[sampleIndex];
-                    sampleIndex++;
-                }
-
-                g_Win32SoundOutput.Cursor = targetCursor;
-
-                if (!SUCCEEDED(g_Win32SoundOutput.SecondaryBuffer->Unlock(
-                        soundBufferSection1, soundBytes1,
-                        soundBufferSection2, soundBytes2)))
-                {
-                    // log error - I don't think we can do much in this case
-                }
-
-                if (!soundStarted)
-                {
-                    g_Win32SoundOutput.SecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
-                    soundStarted = true;
-                }
-            }
-        }
-        
-        RECT clientRect;
+        Win32_CopySoundSamples(&g_GameState, &g_Win32SoundOutput, &g_SoundBuffer);
+        SGE_UpdateAndRender(&g_GameState, (SGE_VideoBuffer *)&g_VideoBackBuffer);        
+        RECT clientRect = {};
         GetClientRect(hWnd, &clientRect);
         Win32_PaintWindow(deviceContext, clientRect);
 
+        real32_t elapsedSeconds = Win32_GetElapsedSeconds(lastTime);
+
+        while (elapsedSeconds < frameLength)
+        {
+            elapsedSeconds = Win32_GetElapsedSeconds(lastTime);
+        }
+        
+        real32_t elapsedMilliseconds = elapsedSeconds * 1000.0;
+        real32_t fps = 1.0 / elapsedSeconds;        
+
+        StringCbPrintfW(debugMessage, debugMessageBufferSize, L"%.02f ms - %.02f fps \n", elapsedMilliseconds, fps);
+        OutputDebugStringW(debugMessage);
+
         LARGE_INTEGER currentTime;
         QueryPerformanceCounter(&currentTime);
-        int64_t timeDelta = currentTime.QuadPart - lastTime.QuadPart;
-        real32_t elapsedSeconds = ((real32_t)timeDelta) / counterFrequency.QuadPart; 
-        real32_t elapsedMilliseconds = elapsedSeconds * 1000.0;
-        real32_t fps = 1.0 / elapsedSeconds;
         lastTime = currentTime;
-
-        if (elapsedSeconds < frameLength)
-        {
-            real32_t remainingFrameSeconds = frameLength - elapsedSeconds;
-            Sleep(remainingFrameSeconds * 1000);
-        }
-
-        StringCbPrintfW(perfCounterMessage, perfCounterMessageBufferSize, L"%.02f ms - %.02f fps \n", elapsedMilliseconds, fps);
-        OutputDebugStringW(perfCounterMessage);
     }
 
     return 0;

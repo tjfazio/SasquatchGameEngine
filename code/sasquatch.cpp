@@ -3,7 +3,7 @@
 #include "common.h"
 #include "sasquatch.h"
 
-internal pixel_t GetFakePixel(SGE_GameState *gameState, int32_t x, int32_t y)
+inline pixel_t GetFakePixel(SGE_GameState *gameState, int32_t x, int32_t y)
 {
     pixel_t blue = 0;
     if (x >= gameState->TestAnimation.XStart
@@ -104,11 +104,11 @@ void SGE_UpdateAndRender(SGE_GameState *gameState, SGE_VideoBuffer *videoBuffer)
 global_variable uint32_t g_SamplePosition = 0;
 global_variable int32_t g_WaveFreq = 440;
 
-void SGE_GetSoundSamples(SGE_SoundBuffer *soundBuffer)
+void SGE_GetSoundSamples(SGE_GameState *gameState, SGE_SoundBuffer *soundBuffer)
 {
     assert(soundBuffer != NULL);
     assert(soundBuffer->BufferSize >= (soundBuffer->NumChannels * soundBuffer->SampleCount * sizeof(sample_t)));
-    const sample_t amp = 5000;
+    sample_t amp = gameState->Keyboard.IsSet(SGE_Action1) ? 2500 : 0;
     
     int32_t channelSampleCount = soundBuffer->NumChannels * soundBuffer->SampleCount;
     for (int32_t i = 0; i < channelSampleCount; i++)

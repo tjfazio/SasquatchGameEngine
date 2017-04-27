@@ -43,4 +43,5 @@ void SGE_Init(SGE_GameState *gameState);
 void SGE_UpdateAndRender(SGE_GameState *gameState,
                          SGE_VideoBuffer *videoBuffer);
 
-void SGE_GetSoundSamples(SGE_SoundBuffer *soundBuffer);
+void SGE_GetSoundSamples(SGE_GameState *gameState,
+                         SGE_SoundBuffer *soundBuffer);

@@ -198,8 +198,8 @@ internal void Win32_InitializeDirectSound(
     waveFormat.nChannels = Win32_NumChannels;
     waveFormat.nSamplesPerSec = samplesPerSecond;
     waveFormat.wBitsPerSample = sizeof(sample_t) * 8;
-    waveFormat.nBlockAlign = (waveFormat.nChannels * waveFormat.wBitsPerSample) / 8;
-    waveFormat.nAvgBytesPerSec = (waveFormat.nSamplesPerSec * waveFormat.nBlockAlign);
+    waveFormat.nBlockAlign = waveFormat.nChannels * sizeof(sample_t);
+    waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
     waveFormat.cbSize = 0;
     if (!SUCCEEDED(g_Win32SoundOutput.PrimaryBuffer->SetFormat(&waveFormat)))
     {
@@ -280,15 +280,34 @@ internal void Win32_CopySoundSamples(
         {
             OutputDebugStringW(L"Resetting write cursor\n");
             soundOutput->Cursor = writeCursor;
-        }
-
-        int32_t bytesToWrite = soundOutput->LatencySampleCount * sizeof(sample_t) * gameSoundBuffer->NumChannels;
-        int32_t targetCursor = (soundOutput->Cursor + bytesToWrite) % soundOutput->SoundBufferSize; 
-        StringCbPrintfW(debugMessage, debugMessageBufferSize, L"Sound bytes to write: %d\n", bytesToWrite);
+        } 
+        StringCbPrintfW(debugMessage, debugMessageBufferSize, L"Play:%d\tWrite:%d\tCursor:%d\n", playCursor, writeCursor, soundOutput->Cursor);
         OutputDebugStringW(debugMessage);
+
+        int32_t latencyBytes = soundOutput->LatencySampleCount * sizeof(sample_t) * gameSoundBuffer->NumChannels;
+        int32_t targetCursor = (playCursor + latencyBytes) % soundOutput->SoundBufferSize;
+        int32_t bytesToWrite;   
+        if (targetCursor >= soundOutput->Cursor)
+        {
+            bytesToWrite = targetCursor - soundOutput->Cursor;
+        }
+        else
+        {
+            bytesToWrite = soundOutput->SoundBufferSize - targetCursor + soundOutput->Cursor;
+        }
+        if (bytesToWrite > gameSoundBuffer->BufferSize)
+        {
+            bytesToWrite = gameSoundBuffer->BufferSize;
+        }
+        // StringCbPrintfW(debugMessage, debugMessageBufferSize, L"Sound bytes to write: %d\n", bytesToWrite);
+        // OutputDebugStringW(debugMessage);
 
         assert(bytesToWrite % (gameSoundBuffer->NumChannels * sizeof(sample_t)) == 0);
         gameSoundBuffer->SampleCount = bytesToWrite / (gameSoundBuffer->NumChannels * sizeof(sample_t));
+
+        // StringCbPrintfW(debugMessage, debugMessageBufferSize, L"Samples to get: %d\n", gameSoundBuffer->SampleCount);
+        // OutputDebugStringW(debugMessage);
+
         SGE_GetSoundSamples(gameState, gameSoundBuffer);
 
         void *soundBufferSection1;
@@ -325,21 +344,24 @@ internal void Win32_CopySoundSamples(
                     soundBufferSection1, soundBytes1,
                     soundBufferSection2, soundBytes2)))
             {                    
-                OutputDebugStringW(L"Sound bytes unlock failed");
+                OutputDebugStringW(L"Sound bytes unlock failed\n");
                 soundOutput->IsSoundValid = false;
             }
-
-            soundOutput->IsSoundValid = true;
+            else
+            {
+                soundOutput->IsSoundValid = true;
+            }
         }
         else
         {                    
-            OutputDebugStringW(L"Sound bytes lock failed");
+            OutputDebugStringW(L"Sound bytes lock failed\n");
             soundOutput->IsSoundValid = false;
         }
     }
     else
     {
-        OutputDebugStringW(L"Get sound cursors failed");
+        OutputDebugStringW(L"Get sound cursors failed\n");
+        soundOutput->IsSoundValid = false;
     }
 }
 
@@ -432,9 +454,8 @@ int WinMain(
     g_Win32SoundOutput.SecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
 
     int32_t samplesPerFrame = Win32_SoundSamplesPerSecond / frameRate;
-    // Only fill up to two frames ahead of the play cursor, but buffer up to 4 frames in case we lag behind
     uint64_t soundBufferSize = 4 * Win32_NumChannels * sizeof(sample_t) * samplesPerFrame;    
-    g_Win32SoundOutput.LatencySampleCount = samplesPerFrame;
+    g_Win32SoundOutput.LatencySampleCount = 4 * samplesPerFrame;
     assert(Win32_PlatformMemorySize > soundBufferSize);
 
     g_SoundBuffer.SamplesPerSecond = Win32_SoundSamplesPerSecond;

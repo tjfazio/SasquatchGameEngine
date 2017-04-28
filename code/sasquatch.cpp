@@ -82,6 +82,15 @@ internal void Animate(SGE_GameState *gameState, SGE_VideoBuffer *videoBuffer)
     gameState->TestAnimation.YStart += gameState->TestAnimation.YVelocity;
 }
 
+// fake game state
+global_variable uint32_t g_SamplePosition = 0;
+global_variable int32_t g_WaveFreq = 440;
+// THIS IS REALLY BAD BECAUSE THE DEVICE MIGHT HAVE A DIFFERENT SAMPLE RATE
+// SO THIS IS JUST DEBUG CODE OK
+const int32_t SamplesPerSecond = 44100;
+global_variable sample_t g_StereoSquareWave[2*SamplesPerSecond];
+const int32_t g_StereoSquareWaveSampleCount = 2 * SamplesPerSecond;
+
 void SGE_Init(SGE_GameState *gameState)
 {    
     gameState->TestAnimation.XStart = 0;
@@ -90,6 +99,19 @@ void SGE_Init(SGE_GameState *gameState)
     gameState->TestAnimation.YVelocity = 0;
     gameState->TestAnimation.BlueWidth = 16;
     gameState->TestAnimation.GreenWidth = 32;
+
+    sample_t amp = 2000;
+    int32_t sampleWaveLength = SamplesPerSecond / g_WaveFreq;
+    for (int32_t i = 0; i < 2 * SamplesPerSecond; i++)
+    {
+        // flip signal every 2 * half_wavelength [L'R'L'R'L,R,L,R,]
+        int32_t sampleIndex = i / sampleWaveLength;
+        sample_t sample = ((sampleIndex % 2) == 0) ? amp : -amp;
+        g_StereoSquareWave[i] = sample;
+    }
+
+    gameState->Sound.IsPlaying = false;
+    gameState->Sound.SamplePosition = 0;
 }
 
 void SGE_UpdateAndRender(SGE_GameState *gameState, SGE_VideoBuffer *videoBuffer)
@@ -100,24 +122,35 @@ void SGE_UpdateAndRender(SGE_GameState *gameState, SGE_VideoBuffer *videoBuffer)
     Animate(gameState, videoBuffer);
 }
 
-// fake game state
-global_variable uint32_t g_SamplePosition = 0;
-global_variable int32_t g_WaveFreq = 440;
-
 void SGE_GetSoundSamples(SGE_GameState *gameState, SGE_SoundBuffer *soundBuffer)
 {
     assert(soundBuffer != NULL);
     assert(soundBuffer->BufferSize >= (soundBuffer->NumChannels * soundBuffer->SampleCount * sizeof(sample_t)));
-    sample_t amp = gameState->Keyboard.IsSet(SGE_Action1) ? 2500 : 0;
+    
+    if (gameState->Keyboard.IsSet(SGE_Action1) && !gameState->Sound.IsPlaying)
+    {
+        gameState->Sound.IsPlaying = true;
+        gameState->Sound.SamplePosition = 0;
+    }
     
     int32_t channelSampleCount = soundBuffer->NumChannels * soundBuffer->SampleCount;
     for (int32_t i = 0; i < channelSampleCount; i++)
     {
-        int32_t sampleWaveLength = soundBuffer->SamplesPerSecond / g_WaveFreq;
-        // flip signal every 2 * half_wavelength [L'R'L'R'L,R,L,R,]
-        int32_t sampleIndex = g_SamplePosition / sampleWaveLength;
-        sample_t sample = ((sampleIndex % 2) == 0) ? amp : -amp;
+        sample_t sample;
+        if (gameState->Sound.IsPlaying)
+        {
+            sample = g_StereoSquareWave[gameState->Sound.SamplePosition];
+            gameState->Sound.SamplePosition++;
+            if (gameState->Sound.SamplePosition >= g_StereoSquareWaveSampleCount)
+            {
+                gameState->Sound.IsPlaying = false;
+                gameState->Sound.SamplePosition = 0;
+            }
+        }
+        else 
+        {
+            sample = 0;
+        }
         soundBuffer->Memory[i] = sample;
-        g_SamplePosition++;
     }
 }

@@ -33,9 +33,16 @@ typedef struct tagAnimationState {
     int32_t GreenWidth;
 } AnimationState;
 
+// Fake sound engine stuff for prototyping
+typedef struct tagSoundState {
+    bool IsPlaying;
+    int32_t SamplePosition;
+} SoundState;
+
 typedef struct tagGameState {
     SGE_Keyboard Keyboard;
     AnimationState TestAnimation;
+    SoundState Sound;
 } SGE_GameState;
 
 void SGE_Init(SGE_GameState *gameState);

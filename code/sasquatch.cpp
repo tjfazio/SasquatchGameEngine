@@ -125,6 +125,8 @@ void SGE_UpdateAndRender(SGE_GameState *gameState, SGE_VideoBuffer *videoBuffer)
 void SGE_GetSoundSamples(SGE_GameState *gameState, SGE_SoundBuffer *soundBuffer)
 {
     assert(soundBuffer != NULL);
+    assert(soundBuffer->NumChannels > 0);
+    assert(soundBuffer->SampleCount >= 0);
     assert(soundBuffer->BufferSize >= (soundBuffer->NumChannels * soundBuffer->SampleCount * sizeof(sample_t)));
     
     if (gameState->Keyboard.IsSet(SGE_Action1) && !gameState->Sound.IsPlaying)

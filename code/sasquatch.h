@@ -2,20 +2,29 @@
 
 #include <stdint.h>
 
+#include "common.h"
 #include "input.h"
 
 #define pixel_t uint32_t
 #define sample_t int16_t
 
+typedef struct SGE_GameClock {    
+    real32_t TimeDeltaSeconds;
+    real32_t GameTimeSeconds;
+    real32_t TargetFrameRate;
+    real32_t TargetFrameLengthSeconds;
+    real32_t FrameVariationSeconds;
+} SGE_GameClock;
+
 // RGB pixels layed out row-wise with given stride
-typedef struct tagSGEVideoBuffer {
+typedef struct SGE_VideoBuffer {
     int32_t Height;
     int32_t Width;
     int32_t Stride;
     pixel_t *Memory;
 } SGE_VideoBuffer;
 
-typedef struct tagSGESoundBuffer {
+typedef struct SGE_SoundBuffer {
     int32_t NumChannels;
     int32_t SamplesPerSecond;
     int32_t SampleCount;
@@ -24,7 +33,7 @@ typedef struct tagSGESoundBuffer {
 } SGE_SoundBuffer; 
 
 // Fake gameplay stuff for prototyping
-typedef struct tagAnimationState {
+typedef struct AnimationState {
     int32_t XStart;
     int32_t XVelocity;
     int32_t YStart;

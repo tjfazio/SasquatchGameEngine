@@ -42,7 +42,6 @@ typedef struct tagSoundOutput {
     bool IsSoundValid;
     LPDIRECTSOUNDBUFFER PrimaryBuffer;
     LPDIRECTSOUNDBUFFER SecondaryBuffer;
-} Win32_SoundBuffer;
 } Win32_SoundOutput;
 
 global_variable bool g_IsApplicationRunning;

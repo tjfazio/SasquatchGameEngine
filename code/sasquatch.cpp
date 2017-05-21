@@ -41,11 +41,21 @@ internal void Animate(SGE_GameState *gameState, SGE_VideoBuffer *videoBuffer)
     }
 
     // fake game logic
-    if (gameState->Keyboard.IsSet(SGE_Up) && !gameState->Keyboard.IsSet(SGE_Down))
+    SGE_ButtonState upState;
+    SGE_ButtonState downState;
+    SGE_ButtonState leftState;
+    SGE_ButtonState rightState;
+    
+    gameState->Controllers[0].GetState(SGE_Up, &upState);
+    gameState->Controllers[0].GetState(SGE_Down, &downState);
+    gameState->Controllers[0].GetState(SGE_Left, &leftState);
+    gameState->Controllers[0].GetState(SGE_Right, &rightState);
+    
+    if (upState.EndedDown && !downState.EndedDown)
     {
         gameState->TestAnimation.YVelocity = -1;
     }
-    else if (gameState->Keyboard.IsSet(SGE_Down) && !gameState->Keyboard.IsSet(SGE_Up))
+    else if (downState.EndedDown && !upState.EndedDown)
     {
         gameState->TestAnimation.YVelocity = 1;
     }
@@ -54,11 +64,11 @@ internal void Animate(SGE_GameState *gameState, SGE_VideoBuffer *videoBuffer)
         gameState->TestAnimation.YVelocity = 0;
     }
 
-    if (gameState->Keyboard.IsSet(SGE_Right) && !gameState->Keyboard.IsSet(SGE_Left))
+    if (rightState.EndedDown && !leftState.EndedDown)
     {
         gameState->TestAnimation.XVelocity = 1;
     }
-    else if (gameState->Keyboard.IsSet(SGE_Left) && !gameState->Keyboard.IsSet(SGE_Right))
+    else if (leftState.EndedDown && !rightState.EndedDown)
     {
         gameState->TestAnimation.XVelocity = -1;
     }
@@ -89,10 +99,15 @@ global_variable int32_t g_WaveFreq = 440;
 // SO THIS IS JUST DEBUG CODE OK
 const int32_t SamplesPerSecond = 44100;
 global_variable sample_t g_StereoSquareWave[2*SamplesPerSecond];
-const int32_t g_StereoSquareWaveSampleCount = 2 * SamplesPerSecond;
+const int32_t g_StereoSquareWaveSampleCount = 2 * (SamplesPerSecond / 4);
 
 void SGE_Init(SGE_GameState *gameState)
 {    
+    for (int i = 0; i < SGE_ControllerCount; i++)
+    {
+        gameState->Controllers[i].Initialize();
+    }
+    
     gameState->TestAnimation.XStart = 0;
     gameState->TestAnimation.XVelocity = 0;
     gameState->TestAnimation.YStart = 0;
@@ -129,7 +144,10 @@ void SGE_GetSoundSamples(SGE_GameState *gameState, SGE_SoundBuffer *soundBuffer)
     assert(soundBuffer->SampleCount >= 0);
     assert(soundBuffer->BufferSize >= (soundBuffer->NumChannels * soundBuffer->SampleCount * sizeof(sample_t)));
     
-    if (gameState->Keyboard.IsSet(SGE_Action1) && !gameState->Sound.IsPlaying)
+    SGE_ButtonState buttonState;
+    gameState->Controllers[0].GetState(SGE_Action1, &buttonState);
+
+    if (buttonState.TransitionCount > 0 && !gameState->Sound.IsPlaying)
     {
         gameState->Sound.IsPlaying = true;
         gameState->Sound.SamplePosition = 0;

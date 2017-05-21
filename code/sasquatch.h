@@ -8,6 +8,17 @@
 #define pixel_t uint32_t
 #define sample_t int16_t
 
+const int32_t SGE_ControllerCount = 1;
+
+enum SGE_ControllerId
+{
+    SGE_Keyboard = 0,
+    SGE_GamePad1 = 1,
+    SGE_GamePad2 = 2,
+    SGE_GamePad3 = 3,
+    SGE_GamePad4 = 4
+};
+
 typedef struct SGE_GameClock {    
     real32_t TimeDeltaSeconds;
     real32_t GameTimeSeconds;
@@ -49,7 +60,7 @@ typedef struct tagSoundState {
 } SoundState;
 
 typedef struct tagGameState {
-    SGE_Keyboard Keyboard;
+    SGE_Controller Controllers[SGE_ControllerCount];
     AnimationState TestAnimation;
     SoundState Sound;
 } SGE_GameState;

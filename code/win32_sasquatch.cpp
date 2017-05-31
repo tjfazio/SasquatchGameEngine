@@ -8,12 +8,14 @@
 #include <assert.h>
 
 #include "common.h"
+#include "debug.h"
 #include "sasquatch.h"
 #include "input.h"
 #include "win32_util.h"
 #include "win32_sound.h"
 
 // Unity build ¯\_(ツ)_/¯
+#include "win32_debug.cpp"
 #include "input.cpp"
 #include "win32_sound.cpp"
 #include "sasquatch.cpp"
@@ -227,9 +229,11 @@ int WinMain(
         return 1;
     }
     
-    ShowWindow(hWnd, nCmdShow);
-    UpdateWindow(hWnd);    
+    Debug_InitializeLog(Debug_Warning, "DebugLog.txt");
 
+    ShowWindow(hWnd, nCmdShow);
+    UpdateWindow(hWnd);
+    
     g_IsApplicationRunning = true;
 
     SGE_GameClock gameClock = {};
@@ -308,7 +312,7 @@ int WinMain(
 
         if (elapsedSeconds > gameClock.TargetFrameLengthSeconds)
         {
-            OutputDebugStringW(L"Missed a frame!\n");
+            Debug_Log(Debug_Error, L"Missed a frame!");
         }
 
         while (elapsedSeconds < gameClock.TargetFrameLengthSeconds)
@@ -327,8 +331,8 @@ int WinMain(
         GetClientRect(hWnd, &clientRect);
         Win32_PaintWindow(deviceContext, clientRect);        
 
-        StringCbPrintfW(debugMessage, debugMessageBufferSize, L"%.02f ms - %.02f fps \n", elapsedMilliseconds, fps);
-        OutputDebugStringW(debugMessage);
+        StringCbPrintfW(debugMessage, debugMessageBufferSize, L"%.02f ms - %.02f fps", elapsedMilliseconds, fps);
+        Debug_Log(Debug_Verbose, debugMessage);
     }
 
     return 0;

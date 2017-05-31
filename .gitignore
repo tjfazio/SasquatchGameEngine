@@ -65,6 +65,9 @@ Temporary Items
 # Visual Studio
 *.suo
 
+# Runtime Output
+DebugLog.txt
+
 # Misc
 misc/
 build/win32_sasquatch.sln

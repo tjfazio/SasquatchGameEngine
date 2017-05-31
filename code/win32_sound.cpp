@@ -1,5 +1,6 @@
 #include <dsound.h>
 
+#include "debug.h"
 #include "win32_sound.h"
 #include "sasquatch.h"
 
@@ -12,7 +13,7 @@ void Win32_InitializeDirectSound(
     HMODULE directSoundLib = LoadLibrary("dsound.dll");
     if (!directSoundLib)
     { 
-        // log error
+        Debug_Log(Debug_Error, L"Failed to load dsound.dll");
         return;
     }
 
@@ -20,12 +21,12 @@ void Win32_InitializeDirectSound(
     LPDIRECTSOUND directSound;
     if (!directSoundCreate || !SUCCEEDED(directSoundCreate(NULL, &directSound, NULL)))
     {
-        // log error
+        Debug_Log(Debug_Error, L"Failed to create DirectSound structure");
         return;
     }
     if (!SUCCEEDED(directSound->SetCooperativeLevel(hwnd, DSSCL_PRIORITY)))
     {
-        // log error
+        Debug_Log(Debug_Error, L"Failed to set DirectSound cooperative level");
         return;
     }
 
@@ -38,7 +39,7 @@ void Win32_InitializeDirectSound(
     primaryBufferDescription.guid3DAlgorithm = GUID_NULL;
     if (!SUCCEEDED(directSound->CreateSoundBuffer(&primaryBufferDescription, &soundOutput->PrimaryBuffer, NULL)))
     {
-        // log error
+        Debug_Log(Debug_Error, L"Failed to create primary DirectSound buffer");
         return;
     }
 
@@ -52,7 +53,7 @@ void Win32_InitializeDirectSound(
     waveFormat.cbSize = 0;
     if (!SUCCEEDED(soundOutput->PrimaryBuffer->SetFormat(&waveFormat)))
     {
-        // log error
+        Debug_Log(Debug_Error, L"Failed to set DirectSound format");
         return;
     }
 
@@ -65,7 +66,7 @@ void Win32_InitializeDirectSound(
     secondaryBufferDescription.guid3DAlgorithm = GUID_NULL;
     if (!SUCCEEDED(directSound->CreateSoundBuffer(&secondaryBufferDescription, &soundOutput->SecondaryBuffer, NULL)))
     {
-        // log error
+        Debug_Log(Debug_Error, L"Failed to create secondary DirectSound buffer");
         return;
     }
     soundOutput->SoundBufferSize = soundBufferSize;
@@ -95,8 +96,12 @@ void Win32_ClearSoundBuffer(Win32_SoundOutput *soundOutput)
                 soundBufferSection2, soundBytes2);
         if (!SUCCEEDED(unlockResult))
         {
-            // log
+            Debug_Log(Debug_Error, L"Failed to unlock buffer when clearing it");
         }
+    }
+    else
+    {
+        Debug_Log(Debug_Warning, L"Failed to lock and clear buffer");
     }
 }
 
@@ -117,11 +122,11 @@ internal void Win32_OutputSoundSamples(
     {
         if (!soundOutput->IsSoundValid)
         {
-            OutputDebugStringW(L"Resetting write cursor\n");
+            Debug_Log(Debug_Warning, L"Resetting write cursor");
             soundOutput->Cursor = writeCursor;
         } 
-        StringCbPrintfW(debugMessage, debugMessageBufferSize, L"Play:%d\tWrite:%d\tCursor:%d\n", playCursor, writeCursor, soundOutput->Cursor);
-        OutputDebugStringW(debugMessage);
+        StringCbPrintfW(debugMessage, debugMessageBufferSize, L"Play:%d\tWrite:%d\tCursor:%d", playCursor, writeCursor, soundOutput->Cursor);
+        Debug_Log(Debug_Verbose, debugMessage);
 
         real32_t soundSeconds = gameClock->TargetFrameLengthSeconds + gameClock->FrameVariationSeconds;
 
@@ -138,7 +143,7 @@ internal void Win32_OutputSoundSamples(
         int32_t bytesToWrite = targetCursor - previousCursor;
         if (bytesToWrite == 0)
         {
-            OutputDebugStringW(L"Play cursor hasn't advanced since last frame. Strange.");
+            Debug_Log(Debug_Warning, L"Play cursor hasn't advanced since last frame. Strange.");
             return;
         }
         if (bytesToWrite < 0)
@@ -149,7 +154,7 @@ internal void Win32_OutputSoundSamples(
         
         if (bytesToWrite > gameSoundBuffer->BufferSize)
         {
-            OutputDebugStringW(L"Sound lagging behind, not enough space in buffer to catch up");
+            Debug_Log(Debug_Warning, L"Sound lagging behind, not enough space in buffer to catch up");
             bytesToWrite = gameSoundBuffer->BufferSize;
         }
 
@@ -195,7 +200,7 @@ internal void Win32_OutputSoundSamples(
                     soundBufferSection1, soundBytes1,
                     soundBufferSection2, soundBytes2)))
             {                    
-                OutputDebugStringW(L"Sound bytes unlock failed\n");
+                Debug_Log(Debug_Error, L"Sound bytes unlock failed\n");
                 soundOutput->IsSoundValid = false;
             }
             else
@@ -205,13 +210,13 @@ internal void Win32_OutputSoundSamples(
         }
         else
         {                    
-            OutputDebugStringW(L"Sound bytes lock failed\n");
+            Debug_Log(Debug_Error, L"Sound bytes lock failed\n");
             soundOutput->IsSoundValid = false;
         }
     }
     else
     {
-        OutputDebugStringW(L"Get sound cursors failed\n");
+        Debug_Log(Debug_Error, L"Get sound cursors failed\n");
         soundOutput->IsSoundValid = false;
     }
 }

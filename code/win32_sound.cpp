@@ -86,7 +86,7 @@ void Win32_ClearSoundBuffer(Win32_SoundOutput *soundOutput)
     if (SUCCEEDED(lockResult))
     {
         assert(soundBytes2 == 0);
-        for (int i = 0; i < soundBytes1; i++)
+        for (uint32_t i = 0; i < soundBytes1; i++)
         {
             (*(uint8_t*)soundBufferSection1) = 0;
         }

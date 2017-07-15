@@ -8,8 +8,8 @@
 const int64_t Debug_LogBufferSize = 1024;
 const int64_t Debug_FileBufferSize = KILOBYTES(64);
 const int32_t Debug_MaxLogRetries = 10;
-const char Debug_MagicValue0 = 0xba;
-const char Debug_MagicValue1 = 0xce;
+const char Debug_MagicValue0 = (char)0xba;
+const char Debug_MagicValue1 = (char)0xce;
 const DWORD Debug_ThreadSleepMs = 15;
 
 global_variable wchar_t g_NewLine[2];
@@ -21,7 +21,7 @@ typedef struct Debug_LogFile
     LogLevel MinLogLevel;
     HANDLE File;
     uint8_t FileInitialized;
-    int64_t FileBufferSize;
+    int32_t FileBufferSize;
     void *FileBufferMemory;
 } Debug_LogFile;
 
@@ -85,7 +85,7 @@ void Debug_Log(LogLevel level, wchar_t *text)
     if (g_LogFile.FileInitialized 
         && (int)level >= (int)g_LogFile.MinLogLevel)
     {
-        uint16_t logSize = wcslen(debugLogBuffer) * sizeof(wchar_t);
+        uint16_t logSize = (uint16_t)(wcslen(debugLogBuffer) * sizeof(wchar_t));
         int32_t bytesToWrite = sizeof(Debug_LogHeader) + logSize;
         int32_t estimatedFreeBytes = g_LogFile.FileWriteCursor - g_LogFile.BufferWriteCursor;
         if (g_LogFile.FileWriteCursor <= g_LogFile.BufferWriteCursor)

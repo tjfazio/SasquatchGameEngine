@@ -13,12 +13,14 @@
 #include "input.h"
 #include "win32_util.h"
 #include "win32_sound.h"
+#include "file.h"
 
 // Unity build ¯\_(ツ)_/¯
 #include "win32_debug.cpp"
-#include "input.cpp"
 #include "win32_sound.cpp"
+#include "win32_file.cpp"
 #include "sasquatch.cpp"
+#include "input.cpp"
 
 global_variable TCHAR szWindowClass[] = _T("sasquatch");
 global_variable TCHAR szTitle[] = _T("Sasquatch Game Engine");
@@ -280,6 +282,16 @@ int WinMain(
     }
     
     Debug_InitializeLog(Debug_Warning, "DebugLog.txt");
+    if (!SGE_InitializeFileSystem())
+    {
+        MessageBox(NULL, 
+            _T("File system initializatino failed!"),
+            _T("Sasquatch"),
+            NULL
+        );
+
+        return 1;
+    }
 
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);

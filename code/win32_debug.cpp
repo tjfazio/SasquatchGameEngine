@@ -159,6 +159,8 @@ DWORD WINAPI Debug_FlushLogBufferToFile(LPVOID lpParam)
         if (logFile->BufferWriteCursor != logFile->FileWriteCursor)
         {
             LONG currentCursor = logFile->FileWriteCursor;
+            assert(currentCursor < logFile->FileBufferSize);
+            assert(currentCursor + 1 < logFile->FileBufferSize);
             if (buffer[currentCursor] == Debug_MagicValue0 
                 && buffer[currentCursor + 1] == Debug_MagicValue1)
             {
@@ -217,7 +219,12 @@ DWORD WINAPI Debug_FlushLogBufferToFile(LPVOID lpParam)
                 InterlockedExchange(&logFile->FileWriteCursor, updatedWriteCursor);
                 FlushFileBuffers(logFile->File);
                 continue;
-            }            
+            }  
+            else
+            {
+                assert(buffer[currentCursor] == Debug_MagicValue0 || buffer[currentCursor] == 0);
+                assert(buffer[currentCursor + 1] == Debug_MagicValue1 || buffer[currentCursor + 1] == 0);
+            }          
         }
         Sleep(Debug_ThreadSleepMs);
     }

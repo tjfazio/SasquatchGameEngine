@@ -22,6 +22,8 @@
 #include "sasquatch.cpp"
 #include "input.cpp"
 
+using namespace Sasquatch;
+
 global_variable TCHAR szWindowClass[] = _T("sasquatch");
 global_variable TCHAR szTitle[] = _T("Sasquatch Game Engine");
 
@@ -42,7 +44,7 @@ typedef struct tagBitmapBuffer {
 global_variable bool g_IsApplicationRunning;
 global_variable Win32_BitmapBuffer g_VideoBackBuffer;
 // HACK: remove global pointer after fixing input polling code
-global_variable SGE_GameState *g_GameState;
+global_variable GameState *g_GameState;
 
 internal void Win32_ResizeWindow(
     HDC targetDeviceContext,
@@ -105,7 +107,7 @@ void Win32_HandleKey(uint32_t virtualKeyCode, bool isKeyDown)
     }
     if (virtualKeyCode >= 0 && virtualKeyCode <= 0xFF)
     {
-        g_GameState->Controllers[SGE_Keyboard].UpdateState((uint8_t)virtualKeyCode, isKeyDown);
+        g_GameState->Controllers[Keyboard].UpdateState((uint8_t)virtualKeyCode, isKeyDown);
     }
 }
 
@@ -150,13 +152,13 @@ LRESULT WndProc(
     return 0;
 }
 
-internal void Win32_InitializeDefaultKeyboardMap(SGE_Controller *keyboard)
+internal void Win32_InitializeDefaultKeyboardMap(Controller *keyboard)
 {
-    keyboard->MapAction(SGE_Up, 'W', VK_UP);
-    keyboard->MapAction(SGE_Down, 'S', VK_DOWN);
-    keyboard->MapAction(SGE_Left, 'A', VK_LEFT);
-    keyboard->MapAction(SGE_Right, 'D', VK_RIGHT);
-    keyboard->MapAction(SGE_Action1, 'Q', VK_SPACE);
+    keyboard->MapAction(ActionCodes::Up, 'W', VK_UP);
+    keyboard->MapAction(ActionCodes::Down, 'S', VK_DOWN);
+    keyboard->MapAction(ActionCodes::Left, 'A', VK_LEFT);
+    keyboard->MapAction(ActionCodes::Right, 'D', VK_RIGHT);
+    keyboard->MapAction(ActionCodes::Action1, 'Q', VK_SPACE);
 }
 
 internal real32_t Win32_GetElapsedSeconds(LARGE_INTEGER lastTime)
@@ -172,8 +174,8 @@ internal real32_t Win32_GetElapsedSeconds(LARGE_INTEGER lastTime)
 
 internal void Win32_InitializeSound(
     Win32_SoundOutput **win32SoundOutputPtr, 
-    SGE_SoundBuffer **gameSoundBufferPtr,
-    SGE_GameClock *gameClock,
+    SoundBuffer **gameSoundBufferPtr,
+    GameClock *gameClock,
     HWND hWnd)
 {        
     uint8_t *platformMemory = (uint8_t *)VirtualAlloc(NULL, Win32_PlatformMemorySize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
@@ -189,8 +191,8 @@ internal void Win32_InitializeSound(
     Win32_ClearSoundBuffer(win32SoundOutput);
     win32SoundOutput->SecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
 
-    SGE_SoundBuffer *gameSoundBuffer = (SGE_SoundBuffer *)(platformMemory + platformMemoryNextByte);
-    platformMemoryNextByte += sizeof(SGE_SoundBuffer);
+    SoundBuffer *gameSoundBuffer = (SoundBuffer *)(platformMemory + platformMemoryNextByte);
+    platformMemoryNextByte += sizeof(SoundBuffer);
 
     gameSoundBuffer->SamplesPerSecond = Win32_SoundSamplesPerSecond;
     gameSoundBuffer->NumChannels = Win32_NumChannels;
@@ -204,17 +206,17 @@ internal void Win32_InitializeSound(
     *gameSoundBufferPtr = gameSoundBuffer;
 }
 
-internal SGE_GameState *Win32_InitializeGameState()
+internal GameState *Win32_InitializeGameState()
 {
     uint8_t *gameStaticMemory = (uint8_t *)VirtualAlloc(NULL, Win32_GameStaticMemorySize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
     assert(gameStaticMemory != NULL);
-    assert(Win32_GameStaticMemorySize > sizeof(SGE_GameState));
-    SGE_GameState *gameState = (SGE_GameState *)gameStaticMemory;
+    assert(Win32_GameStaticMemorySize > sizeof(GameState));
+    GameState *gameState = (GameState *)gameStaticMemory;
     // HACK: need a global pointer for updating the game controllers from Windows events 
     g_GameState = gameState;
 
-    SGE_Init(gameState);
-    Win32_InitializeDefaultKeyboardMap(&gameState->Controllers[SGE_Keyboard]);
+    InitializeGameState(gameState);
+    Win32_InitializeDefaultKeyboardMap(&gameState->Controllers[Keyboard]);
 
     return gameState;
 }
@@ -281,8 +283,8 @@ int WinMain(
         return 1;
     }
     
-    Debug_InitializeLog(Debug_Warning, "DebugLog.txt");
-    if (!SGE_InitializeFileSystem())
+    Debug::InitializeLog(Debug::Warning, "DebugLog.txt");
+    if (!Platform::InitializeFileSystem())
     {
         MessageBox(NULL, 
             _T("File system initializatino failed!"),
@@ -298,7 +300,7 @@ int WinMain(
     
     g_IsApplicationRunning = true;
 
-    SGE_GameClock gameClock = {};
+    GameClock gameClock = {};
     
     // TODO: calculate these values based on hardware capabilities
     gameClock.TargetFrameRate = 30;
@@ -307,10 +309,10 @@ int WinMain(
     gameClock.FrameVariationSeconds = (real32_t)(2.0 * gameClock.TargetFrameLengthSeconds);
 
     Win32_SoundOutput *win32SoundOutput;
-    SGE_SoundBuffer *gameSoundBuffer;
+    SoundBuffer *gameSoundBuffer;
     Win32_InitializeSound(&win32SoundOutput, &gameSoundBuffer, &gameClock, hWnd);
 
-    SGE_GameState *gameState = Win32_InitializeGameState();
+    GameState *gameState = Win32_InitializeGameState();
 
     // Windows will clean this HDC up when the game exits
     HDC deviceContext = GetDC(hWnd);
@@ -334,19 +336,19 @@ int WinMain(
             DispatchMessage(&msg);
         }
 
-        for (int i = 0; i < SGE_ControllerCount; i++)
+        for (int i = 0; i < ControllerCount; i++)
         {
             gameState->Controllers[i].FinalizeState();
         }
 
-        SGE_UpdateAndRender(gameState, (SGE_VideoBuffer *)&g_VideoBackBuffer);        
+        UpdateAndRender(gameState, (VideoBuffer *)&g_VideoBackBuffer);        
         Win32_OutputSoundSamples(&gameClock, gameState, win32SoundOutput, gameSoundBuffer);
         
         real32_t elapsedSeconds = Win32_GetElapsedSeconds(lastTime);
 
         if (elapsedSeconds > gameClock.TargetFrameLengthSeconds)
         {
-            Debug_Log(Debug_Error, L"Missed a frame!");
+            Debug::Log(Debug::Error, L"Missed a frame!");
         }
 
         while (elapsedSeconds < gameClock.TargetFrameLengthSeconds)
@@ -366,7 +368,7 @@ int WinMain(
         Win32_PaintWindow(deviceContext, clientRect);        
 
         StringCbPrintfW(debugMessage, debugMessageBufferSize, L"%.02f ms - %.02f fps", elapsedMilliseconds, fps);
-        Debug_Log(Debug_Verbose, debugMessage);
+        Debug::Log(Debug::Verbose, debugMessage);
     }
 
     return 0;

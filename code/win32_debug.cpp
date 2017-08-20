@@ -5,228 +5,229 @@
 #include "common.h"
 #include "debug.h"
 
-const int64_t Debug_LogBufferSize = 1024;
-const int64_t Debug_FileBufferSize = KILOBYTES(64);
-const int32_t Debug_MaxLogRetries = 10;
-const char Debug_MagicValue0 = (char)0xba;
-const char Debug_MagicValue1 = (char)0xce;
-const DWORD Debug_ThreadSleepMs = 15;
-
-global_variable wchar_t g_NewLine[2];
-
-typedef struct Debug_LogFile
+namespace 
 {
-    volatile LONG BufferWriteCursor;
-    volatile LONG FileWriteCursor;
-    LogLevel MinLogLevel;
-    HANDLE File;
-    uint8_t FileInitialized;
-    int32_t FileBufferSize;
-    void *FileBufferMemory;
-} Debug_LogFile;
+    const int64_t LogBufferSize = 1024;
+    const int64_t FileBufferSize = KILOBYTES(64);
+    const int32_t MaxLogRetries = 10;
+    const char MagicValue0 = (char)0xba;
+    const char MagicValue1 = (char)0xce;
+    const DWORD ThreadSleepMs = 15;
 
-typedef struct Debug_LogHeader
-{
-    uint16_t Magic;
-    uint16_t Length;
-} Debug_LogHeader;
+    const wchar_t g_NewLine[2] = { '\r', '\n' };
 
-global_variable Debug_LogFile g_LogFile;
-global_variable HANDLE g_LogThreadHandle;
-global_variable DWORD g_LogThreadId;
-
-DWORD WINAPI Debug_FlushLogBufferToFile(LPVOID lpParam);
-
-void Debug_InitializeLog(LogLevel minLogLevel, char * fileName)
-{
-    g_NewLine[0] = L'\r';
-    g_NewLine[1] = L'\n';
-
-    g_LogFile.MinLogLevel = minLogLevel;
-    g_LogFile.File = CreateFile(
-        fileName,
-        GENERIC_WRITE,
-        FILE_SHARE_READ,
-        NULL,
-        CREATE_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
-        NULL
-    );
-    if (g_LogFile.File != INVALID_HANDLE_VALUE)
+    typedef struct LogFile
     {
-        g_LogFile.FileBufferMemory = VirtualAlloc(NULL, Debug_FileBufferSize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-        g_LogFile.FileBufferSize = Debug_FileBufferSize;
-        if (g_LogFile.FileBufferMemory != NULL)
+        volatile LONG BufferWriteCursor;
+        volatile LONG FileWriteCursor;
+        Sasquatch::Debug::LogLevel MinLogLevel;
+        HANDLE File;
+        uint8_t FileInitialized;
+        int32_t FileBufferSize;
+        void *FileBufferMemory;
+    } LogFile;
+
+    typedef struct LogHeader
+    {
+        uint16_t Magic;
+        uint16_t Length;
+    } LogHeader;
+
+    LogFile g_LogFile;
+    HANDLE g_LogThreadHandle;
+    DWORD g_LogThreadId;
+
+    DWORD WINAPI FlushLogBufferToFile(LPVOID lpParam)
+    {
+        LogFile *logFile = (LogFile *)lpParam;
+        while (true)
         {
-            g_LogFile.FileInitialized = true;
-        }     
-    }
-
-    g_LogThreadHandle = CreateThread(
-        NULL,
-        0,
-        Debug_FlushLogBufferToFile,
-        &g_LogFile,
-        0,
-        &g_LogThreadId
-    );
-    if (!g_LogThreadHandle)
-    {
-        OutputDebugStringW(L"Log thread initialization failed!");
-    }
-}
-
-void Debug_Log(LogLevel level, wchar_t *text)
-{
-    wchar_t debugLogBuffer[Debug_LogBufferSize];
-    // TODO: add timestamp
-    StringCbPrintfW(debugLogBuffer, Debug_LogBufferSize, L"%d\t%s\r\n", level, text);
-    OutputDebugStringW(debugLogBuffer);
-    if (g_LogFile.FileInitialized 
-        && (int)level >= (int)g_LogFile.MinLogLevel)
-    {
-        uint16_t logSize = (uint16_t)(wcslen(debugLogBuffer) * sizeof(wchar_t));
-        int32_t bytesToWrite = sizeof(Debug_LogHeader) + logSize;
-        int32_t estimatedFreeBytes = g_LogFile.FileWriteCursor - g_LogFile.BufferWriteCursor;
-        if (g_LogFile.FileWriteCursor <= g_LogFile.BufferWriteCursor)
-        {
-            estimatedFreeBytes += Debug_FileBufferSize;
-        }
-        if (bytesToWrite < estimatedFreeBytes)
-        {
-            LONG currentCursor = g_LogFile.BufferWriteCursor;
-            LONG targetCursor = currentCursor + bytesToWrite;
-            if (targetCursor > g_LogFile.FileBufferSize)
+            char *buffer = (char *)logFile->FileBufferMemory;
+            if (logFile->BufferWriteCursor != logFile->FileWriteCursor)
             {
-                targetCursor -= g_LogFile.FileBufferSize;
-            }
-            bool reserveSuccess = false;
-            for (int i = 0; i < Debug_MaxLogRetries; i++)
-            {
-                if (currentCursor == InterlockedCompareExchange(&g_LogFile.BufferWriteCursor, targetCursor, currentCursor))
+                LONG currentCursor = logFile->FileWriteCursor;
+                assert(currentCursor < logFile->FileBufferSize);
+                assert(currentCursor + 1 < logFile->FileBufferSize);
+                if (buffer[currentCursor] == MagicValue0 
+                    && buffer[currentCursor + 1] == MagicValue1)
                 {
-                    reserveSuccess = true;
-                    break;
-                }
-            }
-            if (reserveSuccess)
-            {
-                char *targetBuffer = (char *)g_LogFile.FileBufferMemory;
-                char *sourceBuffer = (char *)debugLogBuffer;
-                LONG firstStart = (currentCursor + sizeof(Debug_LogHeader)) % g_LogFile.FileBufferSize;
-                LONG firstEnd = firstStart + logSize;
-                if (firstEnd > g_LogFile.FileBufferSize)
-                {
-                    firstEnd = g_LogFile.FileBufferSize;
-                }
-                LONG firstLength = firstEnd - firstStart;
-                for (int i = 0; i < firstLength; i++)
-                {
-                    targetBuffer[firstStart + i] = sourceBuffer[i];
-                }
+                    buffer[currentCursor] = 0;
+                    buffer[currentCursor + 1] = 0;
 
-                LONG secondEnd = logSize - firstLength;
-                for (int i = 0; i < secondEnd; i++)
-                {
-                    targetBuffer[i] = sourceBuffer[firstLength + i];
-                }
-
-                LONG sizeCursor = (currentCursor + sizeof(uint16_t)) % g_LogFile.FileBufferSize;
-                targetBuffer[sizeCursor] = (char)(logSize >> 8);
-                targetBuffer[sizeCursor + 1] = (char)(logSize);
-                
-                targetBuffer[currentCursor] = Debug_MagicValue0;
-                targetBuffer[currentCursor + 1] = Debug_MagicValue1;
-            }
-            else
-            {
-                OutputDebugStringW(L"DebugLog: Unable to reserve space after retrying!");
-            }
-        }
-    }
-    else
-    {
-        OutputDebugStringW(L"DebugLog: Not enough buffer space!");
-    }
-}
-
-DWORD WINAPI Debug_FlushLogBufferToFile(LPVOID lpParam)
-{
-    Debug_LogFile *logFile = (Debug_LogFile *)lpParam;
-    while (true)
-    {
-        char *buffer = (char *)logFile->FileBufferMemory;
-        if (logFile->BufferWriteCursor != logFile->FileWriteCursor)
-        {
-            LONG currentCursor = logFile->FileWriteCursor;
-            assert(currentCursor < logFile->FileBufferSize);
-            assert(currentCursor + 1 < logFile->FileBufferSize);
-            if (buffer[currentCursor] == Debug_MagicValue0 
-                && buffer[currentCursor + 1] == Debug_MagicValue1)
-            {
-                buffer[currentCursor] = 0;
-                buffer[currentCursor + 1] = 0;
-
-                LONG sizeCursor = (currentCursor + 2*sizeof(char)) % Debug_FileBufferSize;
-                uint16_t logSizeHigh = ((uint16_t)buffer[sizeCursor]) << 8;
-                uint16_t logSize = logSizeHigh | (uint16_t)buffer[sizeCursor + 1];
-                buffer[sizeCursor] = 0;
-                buffer[sizeCursor + 1] = 0;
-                
-                LONG firstStart = (sizeCursor + sizeof(uint16_t)) % Debug_FileBufferSize;
-                LONG firstEnd = firstStart + logSize;
-                if (firstEnd > Debug_FileBufferSize)
-                {
-                    firstEnd = Debug_FileBufferSize; 
-                }
-                LONG firstSize = firstEnd - firstStart;
-                const void *firstBuffer = (const void *)&buffer[firstStart];
-                DWORD bytesWritten;
-                WriteFile(
-                    logFile->File,
-                    firstBuffer,
-                    (DWORD)firstSize,
-                    &bytesWritten,
-                    NULL
-                );
-                assert(bytesWritten == (DWORD)firstSize);
-                memset((void *)firstBuffer, 0, firstSize);
-                
-                LONG secondSize = (LONG)logSize - firstSize;
-                if (secondSize > 0)
-                {
-                    const void *secondBuffer = (const void *)buffer;
+                    LONG sizeCursor = (currentCursor + 2*sizeof(char)) % FileBufferSize;
+                    uint16_t logSizeHigh = ((uint16_t)buffer[sizeCursor]) << 8;
+                    uint16_t logSize = logSizeHigh | (uint16_t)buffer[sizeCursor + 1];
+                    buffer[sizeCursor] = 0;
+                    buffer[sizeCursor + 1] = 0;
+                    
+                    LONG firstStart = (sizeCursor + sizeof(uint16_t)) % FileBufferSize;
+                    LONG firstEnd = firstStart + logSize;
+                    if (firstEnd > FileBufferSize)
+                    {
+                        firstEnd = FileBufferSize; 
+                    }
+                    LONG firstSize = firstEnd - firstStart;
+                    const void *firstBuffer = (const void *)&buffer[firstStart];
+                    DWORD bytesWritten;
                     WriteFile(
                         logFile->File,
-                        secondBuffer,
-                        (DWORD)secondSize,
+                        firstBuffer,
+                        (DWORD)firstSize,
                         &bytesWritten,
                         NULL
                     );
-                    assert(bytesWritten == (DWORD)secondSize);
-                    memset((void *)secondBuffer, 0, secondSize);
-                }
+                    assert(bytesWritten == (DWORD)firstSize);
+                    memset((void *)firstBuffer, 0, firstSize);
+                    
+                    LONG secondSize = (LONG)logSize - firstSize;
+                    if (secondSize > 0)
+                    {
+                        const void *secondBuffer = (const void *)buffer;
+                        WriteFile(
+                            logFile->File,
+                            secondBuffer,
+                            (DWORD)secondSize,
+                            &bytesWritten,
+                            NULL
+                        );
+                        assert(bytesWritten == (DWORD)secondSize);
+                        memset((void *)secondBuffer, 0, secondSize);
+                    }
 
-                WriteFile(
-                    logFile->File,
-                    g_NewLine,
-                    (DWORD)2,
-                    &bytesWritten,
-                    NULL
-                );
+                    WriteFile(
+                        logFile->File,
+                        g_NewLine,
+                        (DWORD)2,
+                        &bytesWritten,
+                        NULL
+                    );
 
-                LONG updatedWriteCursor = (firstStart + logSize) % Debug_FileBufferSize;
-                InterlockedExchange(&logFile->FileWriteCursor, updatedWriteCursor);
-                FlushFileBuffers(logFile->File);
-                continue;
-            }  
-            else
-            {
-                assert(buffer[currentCursor] == Debug_MagicValue0 || buffer[currentCursor] == 0);
-                assert(buffer[currentCursor + 1] == Debug_MagicValue1 || buffer[currentCursor + 1] == 0);
-            }          
+                    LONG updatedWriteCursor = (firstStart + logSize) % FileBufferSize;
+                    InterlockedExchange(&logFile->FileWriteCursor, updatedWriteCursor);
+                    FlushFileBuffers(logFile->File);
+                    continue;
+                }  
+                else
+                {
+                    assert(buffer[currentCursor] == MagicValue0 || buffer[currentCursor] == 0);
+                    assert(buffer[currentCursor + 1] == MagicValue1 || buffer[currentCursor + 1] == 0);
+                }          
+            }
+            Sleep(ThreadSleepMs);
         }
-        Sleep(Debug_ThreadSleepMs);
+        return 0;
     }
-    return 0;
 }
+
+namespace Sasquatch { namespace Debug 
+{
+    void InitializeLog(LogLevel minLogLevel, char * fileName)
+    {
+        g_LogFile.MinLogLevel = minLogLevel;
+        g_LogFile.File = CreateFile(
+            fileName,
+            GENERIC_WRITE,
+            FILE_SHARE_READ,
+            NULL,
+            CREATE_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL
+        );
+        if (g_LogFile.File != INVALID_HANDLE_VALUE)
+        {
+            g_LogFile.FileBufferMemory = VirtualAlloc(NULL, FileBufferSize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+            g_LogFile.FileBufferSize = FileBufferSize;
+            if (g_LogFile.FileBufferMemory != NULL)
+            {
+                g_LogFile.FileInitialized = true;
+            }     
+        }
+
+        g_LogThreadHandle = CreateThread(
+            NULL,
+            0,
+            FlushLogBufferToFile,
+            &g_LogFile,
+            0,
+            &g_LogThreadId
+        );
+        if (!g_LogThreadHandle)
+        {
+            OutputDebugStringW(L"Log thread initialization failed!");
+        }
+    }
+
+    void Log(LogLevel level, wchar_t *text)
+    {
+        wchar_t debugLogBuffer[LogBufferSize];
+        // TODO: add timestamp
+        StringCbPrintfW(debugLogBuffer, LogBufferSize, L"%d\t%s\r\n", level, text);
+        OutputDebugStringW(debugLogBuffer);
+        if (g_LogFile.FileInitialized 
+            && (int)level >= (int)g_LogFile.MinLogLevel)
+        {
+            uint16_t logSize = (uint16_t)(wcslen(debugLogBuffer) * sizeof(wchar_t));
+            int32_t bytesToWrite = sizeof(LogHeader) + logSize;
+            int32_t estimatedFreeBytes = g_LogFile.FileWriteCursor - g_LogFile.BufferWriteCursor;
+            if (g_LogFile.FileWriteCursor <= g_LogFile.BufferWriteCursor)
+            {
+                estimatedFreeBytes += FileBufferSize;
+            }
+            if (bytesToWrite < estimatedFreeBytes)
+            {
+                LONG currentCursor = g_LogFile.BufferWriteCursor;
+                LONG targetCursor = currentCursor + bytesToWrite;
+                if (targetCursor > g_LogFile.FileBufferSize)
+                {
+                    targetCursor -= g_LogFile.FileBufferSize;
+                }
+                bool reserveSuccess = false;
+                for (int i = 0; i < MaxLogRetries; i++)
+                {
+                    if (currentCursor == InterlockedCompareExchange(&g_LogFile.BufferWriteCursor, targetCursor, currentCursor))
+                    {
+                        reserveSuccess = true;
+                        break;
+                    }
+                }
+                if (reserveSuccess)
+                {
+                    char *targetBuffer = (char *)g_LogFile.FileBufferMemory;
+                    char *sourceBuffer = (char *)debugLogBuffer;
+                    LONG firstStart = (currentCursor + sizeof(LogHeader)) % g_LogFile.FileBufferSize;
+                    LONG firstEnd = firstStart + logSize;
+                    if (firstEnd > g_LogFile.FileBufferSize)
+                    {
+                        firstEnd = g_LogFile.FileBufferSize;
+                    }
+                    LONG firstLength = firstEnd - firstStart;
+                    for (int i = 0; i < firstLength; i++)
+                    {
+                        targetBuffer[firstStart + i] = sourceBuffer[i];
+                    }
+
+                    LONG secondEnd = logSize - firstLength;
+                    for (int i = 0; i < secondEnd; i++)
+                    {
+                        targetBuffer[i] = sourceBuffer[firstLength + i];
+                    }
+
+                    LONG sizeCursor = (currentCursor + sizeof(uint16_t)) % g_LogFile.FileBufferSize;
+                    targetBuffer[sizeCursor] = (char)(logSize >> 8);
+                    targetBuffer[sizeCursor + 1] = (char)(logSize);
+                    
+                    targetBuffer[currentCursor] = MagicValue0;
+                    targetBuffer[currentCursor + 1] = MagicValue1;
+                }
+                else
+                {
+                    OutputDebugStringW(L"DebugLog: Unable to reserve space after retrying!");
+                }
+            }
+        }
+        else
+        {
+            OutputDebugStringW(L"DebugLog: Not enough buffer space!");
+        }
+    }
+}}

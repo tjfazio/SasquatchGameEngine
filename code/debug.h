@@ -1,14 +1,17 @@
 #pragma once
 
-enum LogLevel
+namespace Sasquatch { namespace Debug 
 {
-    Debug_Verbose = 0,
-    Debug_Information = 1,
-    Debug_Warning = 2,
-    Debug_Error = 3,
-    Debug_Critical = 4
-};
+    enum LogLevel
+    {
+        Verbose = 0,
+        Information = 1,
+        Warning = 2,
+        Error = 3,
+        Critical = 4
+    };
 
-void Debug_InitializeLog(LogLevel minLogLevel, char * fileName);
+    void InitializeLog(LogLevel minLogLevel, char * fileName);
 
-void Debug_Log(LogLevel level, char *text);
+    void Log(LogLevel level, char *text);
+} }

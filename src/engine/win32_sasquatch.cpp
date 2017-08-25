@@ -24,79 +24,150 @@
 
 using namespace Sasquatch;
 
-global_variable TCHAR szWindowClass[] = _T("sasquatch");
-global_variable TCHAR szTitle[] = _T("Sasquatch Game Engine");
-
-const uint64_t Win32_PlatformMemorySize = KILOBYTES(64);
-const uint64_t Win32_GameStaticMemorySize = GIGABYTES(2);
-
-// TODO: move these structs to a .h file
-typedef struct tagBitmapBuffer {
-    int32_t Height;
-    int32_t Width;
-    int32_t Stride;
-    void *Memory;
-    BITMAPINFO Info;
-    HBITMAP BitmapHandle;
-    HDC DeviceContext;
-} Win32_BitmapBuffer;
-
-global_variable bool g_IsApplicationRunning;
-global_variable Win32_BitmapBuffer g_VideoBackBuffer;
-// HACK: remove global pointer after fixing input polling code
-global_variable GameState *g_GameState;
-
-internal void Win32_ResizeWindow(
-    HDC targetDeviceContext,
-    RECT clientRect
-    )
+namespace 
 {
-    if (g_VideoBackBuffer.BitmapHandle)
+    TCHAR szWindowClass[] = _T("sasquatch");
+    TCHAR szTitle[] = _T("Sasquatch Game Engine");
+    
+    const uint64_t Win32_PlatformMemorySize = KILOBYTES(64);
+    const uint64_t Win32_GameStaticMemorySize = GIGABYTES(2);
+    
+    typedef struct tagBitmapBuffer {
+        int32_t Height;
+        int32_t Width;
+        int32_t Stride;
+        void *Memory;
+        BITMAPINFO Info;
+        HBITMAP BitmapHandle;
+        HDC DeviceContext;
+    } Win32_BitmapBuffer;
+    
+    bool g_IsApplicationRunning;
+    Win32_BitmapBuffer g_VideoBackBuffer;
+    // HACK: remove global pointer after fixing input polling code
+    GameState *g_GameState;
+
+    void Win32_ResizeWindow(
+        HDC targetDeviceContext,
+        RECT clientRect
+        )
     {
-        DeleteObject(g_VideoBackBuffer.BitmapHandle);
+        if (g_VideoBackBuffer.BitmapHandle)
+        {
+            DeleteObject(g_VideoBackBuffer.BitmapHandle);
+        }
+        if (!g_VideoBackBuffer.DeviceContext)
+        {
+            g_VideoBackBuffer.DeviceContext = CreateCompatibleDC(targetDeviceContext);
+        }
+    
+        g_VideoBackBuffer.Info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        g_VideoBackBuffer.Info.bmiHeader.biWidth = Win32_GetRectWidth(clientRect);
+        g_VideoBackBuffer.Width = g_VideoBackBuffer.Info.bmiHeader.biWidth;
+        g_VideoBackBuffer.Stride = g_VideoBackBuffer.Width;
+        g_VideoBackBuffer.Info.bmiHeader.biHeight = -1 * Win32_GetRectHeight(clientRect);
+        g_VideoBackBuffer.Height = g_VideoBackBuffer.Info.bmiHeader.biHeight;
+        g_VideoBackBuffer.Info.bmiHeader.biPlanes = 1;
+        g_VideoBackBuffer.Info.bmiHeader.biBitCount = 8 * sizeof(pixel_t);
+        g_VideoBackBuffer.Info.bmiHeader.biCompression = BI_RGB;
+    
+        g_VideoBackBuffer.BitmapHandle = CreateDIBSection(
+            g_VideoBackBuffer.DeviceContext,
+            &g_VideoBackBuffer.Info,
+            DIB_RGB_COLORS,
+            &g_VideoBackBuffer.Memory,
+            0,
+            0
+        );
     }
-    if (!g_VideoBackBuffer.DeviceContext)
+    
+    void Win32_PaintWindow(
+        HDC targetDeviceContext,
+        RECT paintRect
+        )
     {
-        g_VideoBackBuffer.DeviceContext = CreateCompatibleDC(targetDeviceContext);
+        SelectObject(g_VideoBackBuffer.DeviceContext, g_VideoBackBuffer.BitmapHandle);
+        BitBlt(
+            targetDeviceContext,
+            paintRect.top,
+            paintRect.left,
+            Win32_GetRectWidth(paintRect),
+            Win32_GetRectHeight(paintRect),
+            g_VideoBackBuffer.DeviceContext,
+            paintRect.top,
+            paintRect.left,
+            SRCCOPY
+        );
+    }
+    
+    void Win32_InitializeDefaultKeyboardMap(Controller *keyboard)
+    {
+        keyboard->MapAction(ActionCodes::Up, 'W', VK_UP);
+        keyboard->MapAction(ActionCodes::Down, 'S', VK_DOWN);
+        keyboard->MapAction(ActionCodes::Left, 'A', VK_LEFT);
+        keyboard->MapAction(ActionCodes::Right, 'D', VK_RIGHT);
+        keyboard->MapAction(ActionCodes::Action1, 'Q', VK_SPACE);
     }
 
-    g_VideoBackBuffer.Info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    g_VideoBackBuffer.Info.bmiHeader.biWidth = Win32_GetRectWidth(clientRect);
-    g_VideoBackBuffer.Width = g_VideoBackBuffer.Info.bmiHeader.biWidth;
-    g_VideoBackBuffer.Stride = g_VideoBackBuffer.Width;
-    g_VideoBackBuffer.Info.bmiHeader.biHeight = -1 * Win32_GetRectHeight(clientRect);
-    g_VideoBackBuffer.Height = g_VideoBackBuffer.Info.bmiHeader.biHeight;
-    g_VideoBackBuffer.Info.bmiHeader.biPlanes = 1;
-    g_VideoBackBuffer.Info.bmiHeader.biBitCount = 8 * sizeof(pixel_t);
-    g_VideoBackBuffer.Info.bmiHeader.biCompression = BI_RGB;
+    real32_t Win32_GetElapsedSeconds(LARGE_INTEGER lastTime)
+    {
+        LARGE_INTEGER counterFrequency;
+        QueryPerformanceFrequency(&counterFrequency);
+        LARGE_INTEGER currentTime;
+        QueryPerformanceCounter(&currentTime);
+        int64_t timeDelta = currentTime.QuadPart - lastTime.QuadPart;
+        real32_t elapsedSeconds = ((real32_t)timeDelta) / counterFrequency.QuadPart;
+        return elapsedSeconds;
+    }
 
-    g_VideoBackBuffer.BitmapHandle = CreateDIBSection(
-        g_VideoBackBuffer.DeviceContext,
-        &g_VideoBackBuffer.Info,
-        DIB_RGB_COLORS,
-        &g_VideoBackBuffer.Memory,
-        0,
-        0
-    );
-}
+    void Win32_InitializeSound(
+        Win32_SoundOutput **win32SoundOutputPtr, 
+        SoundBuffer **gameSoundBufferPtr,
+        GameClock *gameClock,
+        HWND hWnd)
+    {        
+        uint8_t *platformMemory = (uint8_t *)VirtualAlloc(NULL, Win32_PlatformMemorySize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+        assert(platformMemory != NULL);
+        uint64_t platformMemoryNextByte = 0;
 
-internal void Win32_PaintWindow(
-    HDC targetDeviceContext,
-    RECT paintRect
-    )
-{
-    SelectObject(g_VideoBackBuffer.DeviceContext, g_VideoBackBuffer.BitmapHandle);
-    BitBlt(
-        targetDeviceContext,
-        paintRect.top,
-        paintRect.left,
-        Win32_GetRectWidth(paintRect),
-        Win32_GetRectHeight(paintRect),
-        g_VideoBackBuffer.DeviceContext,
-        paintRect.top,
-        paintRect.left,
-        SRCCOPY
-    );
+        Win32_SoundOutput *win32SoundOutput = (Win32_SoundOutput *)(platformMemory + platformMemoryNextByte);
+        platformMemoryNextByte += sizeof(Win32_SoundOutput);
+
+        int32_t samplesPerFrame = (int32_t)(Win32_SoundSamplesPerSecond / gameClock->TargetFrameRate);
+        int32_t soundBufferSize = 4 * Win32_NumChannels * sizeof(sample_t) * samplesPerFrame;
+        Win32_InitializeDirectSound(win32SoundOutput, hWnd, Win32_SoundBufferSize, Win32_SoundSamplesPerSecond);
+        Win32_ClearSoundBuffer(win32SoundOutput);
+        win32SoundOutput->SecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
+
+        SoundBuffer *gameSoundBuffer = (SoundBuffer *)(platformMemory + platformMemoryNextByte);
+        platformMemoryNextByte += sizeof(SoundBuffer);
+
+        gameSoundBuffer->SamplesPerSecond = Win32_SoundSamplesPerSecond;
+        gameSoundBuffer->NumChannels = Win32_NumChannels;
+        gameSoundBuffer->BufferSize = soundBufferSize;
+        gameSoundBuffer->Memory = (sample_t *)(platformMemory + platformMemoryNextByte);
+        platformMemoryNextByte += soundBufferSize;
+        
+        assert(Win32_PlatformMemorySize > platformMemoryNextByte);
+
+        *win32SoundOutputPtr = win32SoundOutput;
+        *gameSoundBufferPtr = gameSoundBuffer;
+    }
+
+    GameState *Win32_InitializeGameState()
+    {
+        uint8_t *gameStaticMemory = (uint8_t *)VirtualAlloc(NULL, Win32_GameStaticMemorySize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+        assert(gameStaticMemory != NULL);
+        assert(Win32_GameStaticMemorySize > sizeof(GameState));
+        GameState *gameState = (GameState *)gameStaticMemory;
+        // HACK: need a global pointer for updating the game controllers from Windows events 
+        g_GameState = gameState;
+
+        InitializeGameState(gameState);
+        Win32_InitializeDefaultKeyboardMap(&gameState->Controllers[Keyboard]);
+
+        return gameState;
+    }
 }
 
 void Win32_HandleKey(uint32_t virtualKeyCode, bool isKeyDown)
@@ -150,75 +221,6 @@ LRESULT WndProc(
     }
 
     return 0;
-}
-
-internal void Win32_InitializeDefaultKeyboardMap(Controller *keyboard)
-{
-    keyboard->MapAction(ActionCodes::Up, 'W', VK_UP);
-    keyboard->MapAction(ActionCodes::Down, 'S', VK_DOWN);
-    keyboard->MapAction(ActionCodes::Left, 'A', VK_LEFT);
-    keyboard->MapAction(ActionCodes::Right, 'D', VK_RIGHT);
-    keyboard->MapAction(ActionCodes::Action1, 'Q', VK_SPACE);
-}
-
-internal real32_t Win32_GetElapsedSeconds(LARGE_INTEGER lastTime)
-{
-    LARGE_INTEGER counterFrequency;
-    QueryPerformanceFrequency(&counterFrequency);
-    LARGE_INTEGER currentTime;
-    QueryPerformanceCounter(&currentTime);
-    int64_t timeDelta = currentTime.QuadPart - lastTime.QuadPart;
-    real32_t elapsedSeconds = ((real32_t)timeDelta) / counterFrequency.QuadPart;
-    return elapsedSeconds;
-}
-
-internal void Win32_InitializeSound(
-    Win32_SoundOutput **win32SoundOutputPtr, 
-    SoundBuffer **gameSoundBufferPtr,
-    GameClock *gameClock,
-    HWND hWnd)
-{        
-    uint8_t *platformMemory = (uint8_t *)VirtualAlloc(NULL, Win32_PlatformMemorySize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-    assert(platformMemory != NULL);
-    uint64_t platformMemoryNextByte = 0;
-
-    Win32_SoundOutput *win32SoundOutput = (Win32_SoundOutput *)(platformMemory + platformMemoryNextByte);
-    platformMemoryNextByte += sizeof(Win32_SoundOutput);
-
-    int32_t samplesPerFrame = (int32_t)(Win32_SoundSamplesPerSecond / gameClock->TargetFrameRate);
-    int32_t soundBufferSize = 4 * Win32_NumChannels * sizeof(sample_t) * samplesPerFrame;
-    Win32_InitializeDirectSound(win32SoundOutput, hWnd, Win32_SoundBufferSize, Win32_SoundSamplesPerSecond);
-    Win32_ClearSoundBuffer(win32SoundOutput);
-    win32SoundOutput->SecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
-
-    SoundBuffer *gameSoundBuffer = (SoundBuffer *)(platformMemory + platformMemoryNextByte);
-    platformMemoryNextByte += sizeof(SoundBuffer);
-
-    gameSoundBuffer->SamplesPerSecond = Win32_SoundSamplesPerSecond;
-    gameSoundBuffer->NumChannels = Win32_NumChannels;
-    gameSoundBuffer->BufferSize = soundBufferSize;
-    gameSoundBuffer->Memory = (sample_t *)(platformMemory + platformMemoryNextByte);
-    platformMemoryNextByte += soundBufferSize;
-    
-    assert(Win32_PlatformMemorySize > platformMemoryNextByte);
-
-    *win32SoundOutputPtr = win32SoundOutput;
-    *gameSoundBufferPtr = gameSoundBuffer;
-}
-
-internal GameState *Win32_InitializeGameState()
-{
-    uint8_t *gameStaticMemory = (uint8_t *)VirtualAlloc(NULL, Win32_GameStaticMemorySize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-    assert(gameStaticMemory != NULL);
-    assert(Win32_GameStaticMemorySize > sizeof(GameState));
-    GameState *gameState = (GameState *)gameStaticMemory;
-    // HACK: need a global pointer for updating the game controllers from Windows events 
-    g_GameState = gameState;
-
-    InitializeGameState(gameState);
-    Win32_InitializeDefaultKeyboardMap(&gameState->Controllers[Keyboard]);
-
-    return gameState;
 }
 
 int WinMain(

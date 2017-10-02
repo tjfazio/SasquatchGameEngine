@@ -4,6 +4,8 @@
 
 #include "common.h"
 #include "input.h"
+#include "Resources/ResourceHandle.h"
+#include "Resources/ResourceCache.h"
 
 #define pixel_t uint32_t
 #define sample_t int16_t
@@ -63,6 +65,7 @@ namespace Sasquatch
 
     typedef struct GameState {
         Input::Controller Controllers[ControllerCount];
+        Resources::ResourceCache Resources;
         AnimationState TestAnimation;
         SoundState Sound;
     } GameState;

@@ -71,3 +71,8 @@ DebugLog.txt
 # Misc
 misc/
 build/win32_sasquatch.sln
+
+# VS build artifacts
+**/bin/
+**/obj/
+*.csproj.user

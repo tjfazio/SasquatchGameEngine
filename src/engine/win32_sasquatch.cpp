@@ -14,13 +14,15 @@
 #include "win32_util.h"
 #include "win32_sound.h"
 #include "file.h"
+#include "Resources/ResourceCache.h"
 
 // Unity build ¯\_(ツ)_/¯
 #include "win32_debug.cpp"
-#include "win32_sound.cpp"
 #include "win32_file.cpp"
 #include "sasquatch.cpp"
+#include "win32_sound.cpp"
 #include "input.cpp"
+#include "Resources/ResourceCache.cpp"
 
 using namespace Sasquatch;
 
@@ -46,6 +48,7 @@ namespace
     Win32_BitmapBuffer g_VideoBackBuffer;
     // HACK: remove global pointer after fixing input polling code
     GameState *g_GameState;
+    Resources::ResourceCache g_ResourceCache;
 
     void Win32_ResizeWindow(
         HDC targetDeviceContext,
@@ -314,6 +317,7 @@ int WinMain(
     SoundBuffer *gameSoundBuffer;
     Win32_InitializeSound(&win32SoundOutput, &gameSoundBuffer, &gameClock, hWnd);
 
+    g_ResourceCache.Initialize(Resources::MaxResourceMemorySize);
     GameState *gameState = Win32_InitializeGameState();
 
     // Windows will clean this HDC up when the game exits

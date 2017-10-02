@@ -18,6 +18,7 @@ namespace Sasquatch
             }
 
         public:
+            GenericStringHandle(): MemoryHandle(nullptr, 0, 0)
             {
                 m_length = 0;
             }
@@ -40,7 +41,9 @@ namespace Sasquatch
             }
 
             GenericStringHandle(const GenericStringHandle<T> &stringHandle)
+                : MemoryHandle(stringHandle.m_memory, stringHandle.m_hashValue, stringHandle.m_memorySize)
             {
+                m_length = stringHandle.m_length;
             }
 
             uint32_t GetLength() { return m_length; }

@@ -11,6 +11,7 @@ namespace Sasquatch
     {
         public:
             ObjectHandle(const T* object, int32_t hashValue)
+                : MemoryHandle(object, hashValue, (uint32_t)sizeof(T))
             {
             }
 

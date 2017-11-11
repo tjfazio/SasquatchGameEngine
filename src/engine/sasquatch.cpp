@@ -2,12 +2,14 @@
 
 #include "common.h"
 #include "sasquatch.h"
+#include "input.h"
 
-using namespace Sasquatch::Input;
 
 namespace
 {
     using namespace Sasquatch;
+
+    using namespace Sasquatch::Input;
 
     inline pixel_t GetFakePixel(GameState *gameState, int32_t x, int32_t y)
     {
@@ -151,7 +153,7 @@ namespace Sasquatch
         assert(soundBuffer != NULL);
         assert(soundBuffer->NumChannels > 0);
         assert(soundBuffer->SampleCount >= 0);
-        assert(soundBuffer->BufferSize >= (soundBuffer->NumChannels * soundBuffer->SampleCount * sizeof(sample_t)));
+        assert(soundBuffer->BufferSize >= (soundBuffer->NumChannels * soundBuffer->SampleCount * (int32_t)sizeof(sample_t)));
         
         ButtonState buttonState;
         gameState->Controllers[0].GetState(Action1, &buttonState);

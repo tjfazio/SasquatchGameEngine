@@ -14,16 +14,16 @@ namespace Sasquatch { namespace Input
         Action1 = 5
     };
 
-    typedef struct ButtonState {
+    struct ButtonState {
         uint8_t StartedDown;
         uint8_t EndedDown;
         uint8_t TransitionCount;
-    } ButtonState;
+    };
 
-    typedef struct ButtonMap {
+    struct ButtonMap {
         uint8_t Primary[ButtonCount];
         uint8_t Secondary[ButtonCount];
-    } ButtonMap;
+    };
 
     class Controller
     {

@@ -14,20 +14,14 @@
 #include "win32_util.h"
 #include "win32_sound.h"
 #include "file.h"
-#include "Resources/ResourceCache.h"
-
-// Unity build ¯\_(ツ)_/¯
-#include "win32_debug.cpp"
-#include "win32_file.cpp"
-#include "sasquatch.cpp"
-#include "win32_sound.cpp"
-#include "input.cpp"
-#include "Resources/ResourceCache.cpp"
+#include "ResourceCache.h"
 
 using namespace Sasquatch;
 
 namespace 
 {
+    using namespace Sasquatch::Platform;
+
     TCHAR szWindowClass[] = _T("sasquatch");
     TCHAR szTitle[] = _T("Sasquatch Game Engine");
     
@@ -103,13 +97,13 @@ namespace
         );
     }
     
-    void Win32_InitializeDefaultKeyboardMap(Controller *keyboard)
+    void Win32_InitializeDefaultKeyboardMap(Input::Controller *keyboard)
     {
-        keyboard->MapAction(ActionCodes::Up, 'W', VK_UP);
-        keyboard->MapAction(ActionCodes::Down, 'S', VK_DOWN);
-        keyboard->MapAction(ActionCodes::Left, 'A', VK_LEFT);
-        keyboard->MapAction(ActionCodes::Right, 'D', VK_RIGHT);
-        keyboard->MapAction(ActionCodes::Action1, 'Q', VK_SPACE);
+        keyboard->MapAction(Input::ActionCodes::Up, 'W', VK_UP);
+        keyboard->MapAction(Input::ActionCodes::Down, 'S', VK_DOWN);
+        keyboard->MapAction(Input::ActionCodes::Left, 'A', VK_LEFT);
+        keyboard->MapAction(Input::ActionCodes::Right, 'D', VK_RIGHT);
+        keyboard->MapAction(Input::ActionCodes::Action1, 'Q', VK_SPACE);
     }
 
     real32_t Win32_GetElapsedSeconds(LARGE_INTEGER lastTime)
@@ -237,7 +231,7 @@ int WinMain(
 
     wcex.cbSize = sizeof(WNDCLASSEX);
     wcex.style = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc = WndProc;
+    wcex.lpfnWndProc = (WNDPROC)WndProc;
     wcex.cbClsExtra = 0;
     wcex.cbWndExtra = 0;
     wcex.hInstance = hInstance;
@@ -322,11 +316,7 @@ int WinMain(
 
     // Windows will clean this HDC up when the game exits
     HDC deviceContext = GetDC(hWnd);
-
-    const int debugMessageMaxLength = 255;
-    wchar_t debugMessage[debugMessageMaxLength];
-    size_t debugMessageBufferSize = debugMessageMaxLength * sizeof(wchar_t);
-
+    
     LARGE_INTEGER lastTime;
     QueryPerformanceCounter(&lastTime);
     while (g_IsApplicationRunning)
@@ -354,7 +344,7 @@ int WinMain(
 
         if (elapsedSeconds > gameClock.TargetFrameLengthSeconds)
         {
-            Debug::Log(Debug::Error, L"Missed a frame!");
+            Debug::Log(Debug::Error, "Missed a frame!");
         }
 
         while (elapsedSeconds < gameClock.TargetFrameLengthSeconds)
@@ -373,7 +363,11 @@ int WinMain(
         GetClientRect(hWnd, &clientRect);
         Win32_PaintWindow(deviceContext, clientRect);        
 
-        StringCbPrintfW(debugMessage, debugMessageBufferSize, L"%.02f ms - %.02f fps", elapsedMilliseconds, fps);
+        // TODO: fix this mess
+        const int debugMessageMaxLength = 1024;
+        char debugMessage[debugMessageMaxLength];
+        size_t debugMessageBufferSize = debugMessageMaxLength * sizeof(char);
+        StringCbPrintfA(debugMessage, debugMessageBufferSize, "%.02f ms - %.02f fps", elapsedMilliseconds, fps);
         Debug::Log(Debug::Verbose, debugMessage);
     }
 

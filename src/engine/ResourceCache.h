@@ -2,8 +2,10 @@
 
 #include <stdint.h>
 
+#include "ResourceCache.h"
 #include "ResourceHandle.h"
-#include "../file.h"
+#include "common.h"
+#include "file.h"
 
 namespace Sasquatch { namespace Resources
 {
@@ -39,7 +41,7 @@ namespace Sasquatch { namespace Resources
             
             void LoadResourcePacakage(const char *resourcePackagePath);
 
-            friend void LoadResourcePackageCallback(ReadFileCallbackArgs callbackArgs);
+            static void LoadResourcePackageCallback(ReadFileCallbackArgs callbackArgs);
 
             ResourceHandle *GetResource(const char *resourceName);
 

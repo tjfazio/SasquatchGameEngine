@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <stdint.h>
 #include <assert.h>
+#include <strsafe.h>
 
 #include "common.h"
 #include "debug.h"
@@ -157,16 +158,16 @@ namespace Sasquatch { namespace Debug
         }
     }
 
-    void Log(LogLevel level, wchar_t *text)
+    void Log(LogLevel level, char *text)
     {
-        wchar_t debugLogBuffer[LogBufferSize];
+        char debugLogBuffer[LogBufferSize];
         // TODO: add timestamp
-        StringCbPrintfW(debugLogBuffer, LogBufferSize, L"%d\t%s\r\n", level, text);
-        OutputDebugStringW(debugLogBuffer);
+        StringCbPrintfA(debugLogBuffer, LogBufferSize, "%d\t%s\r\n", level, text);
+        OutputDebugStringA(debugLogBuffer);
         if (g_LogFile.FileInitialized 
             && (int)level >= (int)g_LogFile.MinLogLevel)
         {
-            uint16_t logSize = (uint16_t)(wcslen(debugLogBuffer) * sizeof(wchar_t));
+            uint16_t logSize = (uint16_t)(strlen(debugLogBuffer) * sizeof(char));
             int32_t bytesToWrite = sizeof(LogHeader) + logSize;
             int32_t estimatedFreeBytes = g_LogFile.FileWriteCursor - g_LogFile.BufferWriteCursor;
             if (g_LogFile.FileWriteCursor <= g_LogFile.BufferWriteCursor)

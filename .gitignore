@@ -76,3 +76,6 @@ build/win32_sasquatch.sln
 **/bin/
 **/obj/
 *.csproj.user
+*.idb
+*.tlog
+*.log

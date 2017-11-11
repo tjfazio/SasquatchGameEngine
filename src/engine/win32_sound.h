@@ -9,14 +9,14 @@ namespace Sasquatch { namespace Platform
     // function pointers for DLLs
     typedef HRESULT (*DirectSoundCreate_T)(LPCGUID lpcGuidDevice, LPDIRECTSOUND * ppDS, LPUNKNOWN pUnkOuter);
 
-    typedef struct tagSoundOutput {
+    struct Win32_SoundOutput {
         int32_t SoundBufferSize;
         int32_t Cursor;
         int32_t LatencySampleCount;
         bool IsSoundValid;
         LPDIRECTSOUNDBUFFER PrimaryBuffer;
         LPDIRECTSOUNDBUFFER SecondaryBuffer;
-    } Win32_SoundOutput;
+    };
 
     const int32_t Win32_SoundSamplesPerSecond = 44100;
     const int32_t Win32_NumChannels = 2;
@@ -30,7 +30,7 @@ namespace Sasquatch { namespace Platform
 
     void Win32_ClearSoundBuffer(Win32_SoundOutput *soundOutput);
 
-    internal void Win32_OutputSoundSamples(
+    void Win32_OutputSoundSamples(
         GameClock *gameClock,
         GameState *gameState,
         Win32_SoundOutput *soundOutput, 

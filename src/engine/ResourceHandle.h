@@ -1,11 +1,13 @@
 #pragma once
 
 #include <stdint.h>
-#include "../StringHandle.h"
+#include <assert.h>
+
+#include "StringHandle.h"
 
 namespace Sasquatch { namespace Resources
 {
-    class ResourceHandle
+    class ResourceHandle final
     {
         private:           
             StringHandle m_resourceName;
@@ -25,9 +27,16 @@ namespace Sasquatch { namespace Resources
                 m_resourceMemory = resourceMemory;
             }
 
-            StringHandle GetName() { return m_resourceName; }
-            uint32_t GetSize() { return m_resourceSize; }
-            void *GetMemory() { return m_resourceMemory; }
-            bool IsValid() { return m_resourceMemory != nullptr; }
+            inline StringHandle GetName() { return m_resourceName; }
+
+            inline uint32_t GetSize() { return m_resourceSize; }
+
+            inline void *GetMemory() 
+            { 
+                assert(IsValid());
+                return m_resourceMemory; 
+            }
+            
+            inline bool IsValid() { return m_resourceMemory != nullptr; }
     };
 }}

@@ -1,4 +1,5 @@
 #include <dsound.h>
+#include <strsafe.h>
 
 #include "debug.h"
 #include "win32_sound.h"
@@ -15,7 +16,7 @@ namespace Sasquatch { namespace Platform
         HMODULE directSoundLib = LoadLibrary("dsound.dll");
         if (!directSoundLib)
         { 
-            Debug::Log(Debug::Error, L"Failed to load dsound.dll");
+            Debug::Log(Debug::Error, "Failed to load dsound.dll");
             return;
         }
 
@@ -23,12 +24,12 @@ namespace Sasquatch { namespace Platform
         LPDIRECTSOUND directSound;
         if (!directSoundCreate || !SUCCEEDED(directSoundCreate(NULL, &directSound, NULL)))
         {
-            Debug::Log(Debug::Error, L"Failed to create DirectSound structure");
+            Debug::Log(Debug::Error, "Failed to create DirectSound structure");
             return;
         }
         if (!SUCCEEDED(directSound->SetCooperativeLevel(hwnd, DSSCL_PRIORITY)))
         {
-            Debug::Log(Debug::Error, L"Failed to set DirectSound cooperative level");
+            Debug::Log(Debug::Error, "Failed to set DirectSound cooperative level");
             return;
         }
 
@@ -41,7 +42,7 @@ namespace Sasquatch { namespace Platform
         primaryBufferDescription.guid3DAlgorithm = GUID_NULL;
         if (!SUCCEEDED(directSound->CreateSoundBuffer(&primaryBufferDescription, &soundOutput->PrimaryBuffer, NULL)))
         {
-            Debug::Log(Debug::Error, L"Failed to create primary DirectSound buffer");
+            Debug::Log(Debug::Error, "Failed to create primary DirectSound buffer");
             return;
         }
 
@@ -55,7 +56,7 @@ namespace Sasquatch { namespace Platform
         waveFormat.cbSize = 0;
         if (!SUCCEEDED(soundOutput->PrimaryBuffer->SetFormat(&waveFormat)))
         {
-            Debug::Log(Debug::Error, L"Failed to set DirectSound format");
+            Debug::Log(Debug::Error, "Failed to set DirectSound format");
             return;
         }
 
@@ -68,7 +69,7 @@ namespace Sasquatch { namespace Platform
         secondaryBufferDescription.guid3DAlgorithm = GUID_NULL;
         if (!SUCCEEDED(directSound->CreateSoundBuffer(&secondaryBufferDescription, &soundOutput->SecondaryBuffer, NULL)))
         {
-            Debug::Log(Debug::Error, L"Failed to create secondary DirectSound buffer");
+            Debug::Log(Debug::Error, "Failed to create secondary DirectSound buffer");
             return;
         }
         soundOutput->SoundBufferSize = soundBufferSize;
@@ -98,24 +99,24 @@ namespace Sasquatch { namespace Platform
                     soundBufferSection2, soundBytes2);
             if (!SUCCEEDED(unlockResult))
             {
-                Debug::Log(Debug::Error, L"Failed to unlock buffer when clearing it");
+                Debug::Log(Debug::Error, "Failed to unlock buffer when clearing it");
             }
         }
         else
         {
-            Debug::Log(Debug::Warning, L"Failed to lock and clear buffer");
+            Debug::Log(Debug::Warning, "Failed to lock and clear buffer");
         }
     }
 
 
-    internal void Win32_OutputSoundSamples(
+    void Win32_OutputSoundSamples(
         GameClock *gameClock,
         GameState *gameState,
         Win32_SoundOutput *soundOutput, 
         SoundBuffer *gameSoundBuffer)
     {
         const int debugMessageMaxLength = 255;
-        wchar_t debugMessage[debugMessageMaxLength];
+        char debugMessage[debugMessageMaxLength];
         size_t debugMessageBufferSize = debugMessageMaxLength * sizeof(wchar_t);
 
         DWORD playCursor;
@@ -124,10 +125,10 @@ namespace Sasquatch { namespace Platform
         {
             if (!soundOutput->IsSoundValid)
             {
-                Debug::Log(Debug::Warning, L"Resetting write cursor");
+                Debug::Log(Debug::Warning, "Resetting write cursor");
                 soundOutput->Cursor = writeCursor;
             } 
-            StringCbPrintfW(debugMessage, debugMessageBufferSize, L"Play:%d\tWrite:%d\tCursor:%d", playCursor, writeCursor, soundOutput->Cursor);
+            StringCbPrintfA(debugMessage, debugMessageBufferSize, "Play:%d\tWrite:%d\tCursor:%d", playCursor, writeCursor, soundOutput->Cursor);
             Debug::Log(Debug::Verbose, debugMessage);
 
             real32_t soundSeconds = gameClock->TargetFrameLengthSeconds + gameClock->FrameVariationSeconds;
@@ -145,7 +146,7 @@ namespace Sasquatch { namespace Platform
             int32_t bytesToWrite = targetCursor - previousCursor;
             if (bytesToWrite == 0)
             {
-                Debug::Log(Debug::Warning, L"Play cursor hasn't advanced since last frame. Strange.");
+                Debug::Log(Debug::Warning, "Play cursor hasn't advanced since last frame. Strange.");
                 return;
             }
             if (bytesToWrite < 0)
@@ -156,12 +157,12 @@ namespace Sasquatch { namespace Platform
             
             if (bytesToWrite > gameSoundBuffer->BufferSize)
             {
-                Debug::Log(Debug::Warning, L"Sound lagging behind, not enough space in buffer to catch up");
+                Debug::Log(Debug::Warning, "Sound lagging behind, not enough space in buffer to catch up");
                 bytesToWrite = gameSoundBuffer->BufferSize;
             }
 
-            StringCbPrintfW(debugMessage, debugMessageBufferSize, L"Sound bytes to write: %d\n", bytesToWrite);
-            OutputDebugStringW(debugMessage);
+            StringCbPrintfA(debugMessage, debugMessageBufferSize, "Sound bytes to write: %d\n", bytesToWrite);
+            Debug::Log(Debug::Verbose, debugMessage);
 
             assert(bytesToWrite % (gameSoundBuffer->NumChannels * sizeof(sample_t)) == 0);
             gameSoundBuffer->SampleCount = bytesToWrite / (gameSoundBuffer->NumChannels * sizeof(sample_t));
@@ -202,7 +203,7 @@ namespace Sasquatch { namespace Platform
                         soundBufferSection1, soundBytes1,
                         soundBufferSection2, soundBytes2)))
                 {                    
-                    Debug::Log(Debug::Error, L"Sound bytes unlock failed\n");
+                    Debug::Log(Debug::Error, "Sound bytes unlock failed\n");
                     soundOutput->IsSoundValid = false;
                 }
                 else
@@ -212,13 +213,13 @@ namespace Sasquatch { namespace Platform
             }
             else
             {                    
-                Debug::Log(Debug::Error, L"Sound bytes lock failed\n");
+                Debug::Log(Debug::Error, "Sound bytes lock failed\n");
                 soundOutput->IsSoundValid = false;
             }
         }
         else
         {
-            Debug::Log(Debug::Error, L"Get sound cursors failed\n");
+            Debug::Log(Debug::Error, "Get sound cursors failed\n");
             soundOutput->IsSoundValid = false;
         }
     }

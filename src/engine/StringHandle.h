@@ -2,12 +2,13 @@
 
 #include <stdint.h>
 #include <assert.h>
+
 #include "ObjectHandle.h"
 
 namespace Sasquatch
 {
     template<class T>
-    class GenericStringHandle : MemoryHandle
+    class GenericStringHandle final : MemoryHandle
     {
         private:
             uint32_t m_length;
@@ -46,9 +47,9 @@ namespace Sasquatch
                 m_length = stringHandle.m_length;
             }
 
-            uint32_t GetLength() { return m_length; }
+            inline uint32_t GetLength() { return m_length; }
 
-            T* GetCString() { return GetObjectPtr(); }
+            inline T* GetCString() { return GetObjectPtr(); }
     };
 
     typedef GenericStringHandle<char> StringHandle;

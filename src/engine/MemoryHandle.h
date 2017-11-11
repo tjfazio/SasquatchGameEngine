@@ -19,10 +19,10 @@ namespace Sasquatch
                 m_memorySize = memorySize;
             }
             
-            int32_t GetHashValue() { return m_hashValue; }
+            inline int32_t GetHashValue() { return m_hashValue; }
 
-            uint32_t GetMemorySize() { return m_memorySize; }
+            inline uint32_t GetMemorySize() { return m_memorySize; }
             
-            bool IsValid() { return m_memory != nullptr; }
+            inline bool IsValid() { return m_memory != nullptr; }
     };
 }

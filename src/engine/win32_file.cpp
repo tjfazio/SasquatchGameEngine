@@ -1,4 +1,6 @@
 #include <windows.h>
+#include <assert.h>
+#include <strsafe.h>
 
 #include "debug.h"
 #include "file.h"
@@ -10,7 +12,7 @@ namespace
 
     typedef struct ReadFileOperation
     {
-        const wchar_t *FilePath;
+        const char *FilePath;
         void *DestBuffer;
         int32_t DestBufferSize;
         int32_t IsReady;
@@ -45,7 +47,7 @@ namespace
     DWORD ExecuteFileReads(LPVOID lpParam)
     {
         const int debugMessageMaxLength = 512;
-        wchar_t debugMessage[debugMessageMaxLength];
+        char debugMessage[debugMessageMaxLength];
     
         while (true)
         {        
@@ -71,7 +73,7 @@ namespace
             failedCallbackArgs.DestBuffer = operation->DestBuffer;
             failedCallbackArgs.BytesRead = 0;
     
-            HANDLE fileHandle = CreateFileW(
+            HANDLE fileHandle = CreateFileA(
                 operation->FilePath,
                 GENERIC_READ,
                 FILE_SHARE_READ,
@@ -82,7 +84,7 @@ namespace
             );
             if (fileHandle == INVALID_HANDLE_VALUE)
             {
-                StringCbPrintfW(debugMessage, debugMessageMaxLength, L"Failed to open file %s to read: %d", 
+                StringCbPrintfA(debugMessage, debugMessageMaxLength, "Failed to open file %s to read: %d", 
                     operation->FilePath, 
                     GetLastError());
                 Debug::Log(Debug::Error, debugMessage);
@@ -100,7 +102,7 @@ namespace
             );
             if (!result)
             {
-                StringCbPrintfW(debugMessage, debugMessageMaxLength, L"ReadFileEx call for %s failed: %d", 
+                StringCbPrintfA(debugMessage, debugMessageMaxLength, "ReadFileEx call for %s failed: %d", 
                     operation->FilePath, 
                     GetLastError());
                 Debug::Log(Debug::Error, debugMessage);
@@ -122,19 +124,19 @@ namespace
 
 namespace Sasquatch { namespace Platform
 {
-    BOOL InitializeFileSystem()
+    bool InitializeFileSystem()
     {
         HANDLE threadHandle = CreateThread(
             NULL,
             0,
-            ExecuteFileReads,
+            (LPTHREAD_START_ROUTINE)ExecuteFileReads,
             NULL,
             0,
             NULL
         );
         if (!threadHandle)
         {
-            Debug::Log(Debug::Error, L"File read thread creation failed!");
+            Debug::Log(Debug::Error, "File read thread creation failed!");
             return false;
         }
         g_ReadFileThread = threadHandle;
@@ -142,7 +144,7 @@ namespace Sasquatch { namespace Platform
     }
 
     void ReadFile(
-        const wchar_t * filePath, 
+        const char * filePath, 
         void *destBuffer, 
         int32_t destBufferSize, 
         ReadFileCallback callback)
@@ -165,7 +167,7 @@ namespace Sasquatch { namespace Platform
         }
         if (operation == nullptr)
         {
-            Debug::Log(Debug::Error, L"ReadFile: Already at max outstanding file read operations");
+            Debug::Log(Debug::Error, "ReadFile: Already at max outstanding file read operations");
             if (callback != nullptr)
             {
                 callback(failedCallbackArgs);

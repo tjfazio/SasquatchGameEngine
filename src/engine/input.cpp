@@ -16,7 +16,7 @@ namespace Sasquatch { namespace Input
         Map.Secondary[actionCode] = secondaryKeyCode;
     }
 
-    inline void Controller::UpdateState(uint8_t keyCode, bool isDown)
+    void Controller::UpdateState(uint8_t keyCode, bool isDown)
     {            
         assert(keyCode < ButtonCount);
         if ((bool)InactiveButtonState[keyCode].EndedDown != isDown)
@@ -40,7 +40,7 @@ namespace Sasquatch { namespace Input
         }
     }
 
-    inline void Controller::GetState(uint8_t actionCode, ButtonState *buttonStateOut)
+    void Controller::GetState(uint8_t actionCode, ButtonState *buttonStateOut)
     {
         ButtonState primaryButton = ActiveButtonState[Map.Primary[actionCode]];
         ButtonState secondaryButton = ActiveButtonState[Map.Secondary[actionCode]];

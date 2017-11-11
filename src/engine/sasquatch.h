@@ -4,8 +4,8 @@
 
 #include "common.h"
 #include "input.h"
-#include "Resources/ResourceHandle.h"
-#include "Resources/ResourceCache.h"
+#include "ResourceHandle.h"
+#include "ResourceCache.h"
 
 #define pixel_t uint32_t
 #define sample_t int16_t

@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <assert.h>
+
 #include "MemoryHandle.h"
 
 namespace Sasquatch
@@ -15,9 +16,9 @@ namespace Sasquatch
             {
             }
 
-            T* GetObjectPtr() { return m_object; }
+            inline T* GetObjectPtr() { return m_object; }
 
-            T& GetObjectRef()
+            inline T& GetObjectRef()
             {
                 assert(IsValid());
                 return *m_object; 

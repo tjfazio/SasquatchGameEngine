@@ -44,9 +44,11 @@ namespace Sasquatch { namespace Resources
         s_resourceCachePtr = this;
     }
 
+    const uint8_t ResourceHeaderStart[2] = { (uint8_t)0xFE, (uint8_t)0x01 };
+
     void ResourceCache::LoadResourcePackageCallback(ReadFileCallbackArgs callbackArgs)
     {
-        if (!callbackArgs.Success)
+        if (!callbackArgs.Success || callbackArgs.BytesRead < 0)
         {
             // TODO: more descriptive error message
             Log(LogLevel::Error, "Failed to load resource package");
@@ -54,9 +56,49 @@ namespace Sasquatch { namespace Resources
         }
 
         s_resourceCachePtr->m_loadedMemorySize = (uint32_t)callbackArgs.BytesRead;
-        for (uint32_t i = 0; i < s_resourceCachePtr->m_loadedMemorySize; i++)
+        uint8_t *memory = (uint8_t*)s_resourceCachePtr->m_resourceMemory;
+        bool startOfBlock = true;
+        while (memory < (uint8_t*)s_resourceCachePtr->m_resourceMemory + s_resourceCachePtr->m_loadedMemorySize)
         {
             // add header reading logic
+            if (*memory == ResourceHeaderStart[0] && *(memory + 1) == ResourceHeaderStart[1])
+            {
+                // start of header
+                memory += sizeof(ResourceHeaderStart);
+
+                int32_t resourceIndex = *(int32_t *)memory;
+                memory += sizeof(int32_t);
+                assert(resourceIndex < MaxResourceCount);
+
+                int32_t packedSize = *(int32_t*)memory;
+                memory += sizeof(int32_t);
+
+                int32_t unpackedSize = *(int32_t*)memory;
+                memory += sizeof(int32_t);
+
+                int32_t resourceNameLength = *(int32_t*)memory;
+                memory += sizeof(int32_t);
+
+                const char *resourceNamePtr = (const char *)memory;
+                memory += resourceNameLength + 1; // add one to include null byte
+                assert(resourceNamePtr[resourceNameLength] == NULL);
+
+                StringHandle name(resourceNamePtr, resourceNameLength + 1, resourceNameLength);
+                s_resourceCachePtr->m_resourceCacheHandles[resourceIndex] = ResourceHandle(name, unpackedSize, (void *)memory);
+                memory += unpackedSize;
+                
+                startOfBlock = true;
+            }
+            else
+            {
+                // TODO: fix logging
+                if (startOfBlock)
+                {
+                    Log(LogLevel::Error, "Resource memory is corrupted");
+                    startOfBlock = false;
+                }
+                memory++;
+            }
         }
         s_resourceCachePtr->m_isReady = 1;
     }

@@ -13,19 +13,20 @@ namespace Sasquatch
         private:
             uint32_t m_length;
 
-            int32_t CalculateHashValue(T* charArray)
+            int32_t CalculateHashValue(const T* charArray)
             {
+                // TODO: implement
                 return 0;
             }
 
         public:
-            GenericStringHandle(): MemoryHandle(nullptr, 0, 0)
+            GenericStringHandle() : MemoryHandle(nullptr, 0, 0)
             {
                 m_length = 0;
             }
 
-            GenericStringHandle(T* charArray, uint32_t memorySize, uint32_t length) 
-                : MemoryHandle(charArray, CalculateHashValue(charArray), memorySize)
+            GenericStringHandle(const T* charArray, uint32_t memorySize, uint32_t length) 
+                : MemoryHandle((void*)charArray, CalculateHashValue(charArray), memorySize)
             {
                 #ifdef SASQUATCH_NONRELEASE
                 if (sizeof(T) == sizeof(char))
@@ -41,10 +42,10 @@ namespace Sasquatch
                 m_length = length; 
             }
 
-            GenericStringHandle(const GenericStringHandle<T> &stringHandle)
-                : MemoryHandle(stringHandle.m_memory, stringHandle.m_hashValue, stringHandle.m_memorySize)
+            GenericStringHandle(const GenericStringHandle<T> &other)
+                : MemoryHandle(other.m_memory, other.m_hashValue, other.m_memorySize),
+                m_length(other.m_length)
             {
-                m_length = stringHandle.m_length;
             }
 
             inline uint32_t GetLength() { return m_length; }

@@ -28,7 +28,7 @@ namespace Sasquatch { namespace Resources
             uint32_t m_loadedMemorySize;
             int32_t m_isReady;
 
-            ResourceCacheNode m_resourceCacheNodes[MaxResourceCount];
+            ResourceHandle m_resourceCacheHandles[MaxResourceCount];
             ResourceCacheNode m_resourceCacheMap[3 * MaxResourceCount];
             void *m_resourceMemory;
 

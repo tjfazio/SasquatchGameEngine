@@ -22,7 +22,6 @@ namespace
     
     const int32_t MaxOutstandingReads = 16;
     const DWORD FileReadSleepMs = 250;
-    
     // TODO: implement priority queue
     ReadFileOperation g_ReadOperations[MaxOutstandingReads];
     HANDLE g_ReadFileThread;
@@ -44,6 +43,8 @@ namespace
         assert(prevActive == 1);
     }
     
+    static int32_t s_lastUsedOperationSlot = MaxOutstandingReads;
+
     DWORD ExecuteFileReads(LPVOID lpParam)
     {
         const int debugMessageMaxLength = 512;
@@ -52,20 +53,24 @@ namespace
         while (true)
         {        
             ReadFileOperation *operation = nullptr;
-            for (int i = 0; i < MaxOutstandingReads; i++)
+            int32_t index;
+            for (int32_t i = 1; i <= MaxOutstandingReads; i++)
             {
-                if (g_ReadOperations[i].IsActive)
+                index = (s_lastUsedOperationSlot + i) % MaxOutstandingReads;
+                if (g_ReadOperations[index].IsActive)
                 {
-                    operation = &g_ReadOperations[i];
+                    operation = &g_ReadOperations[index];
                     break;
                 }
-            }
+            }            
     
             if (operation == nullptr)
             {
                 SleepEx(FileReadSleepMs, true);
                 continue;
             }
+
+            s_lastUsedOperationSlot = index;
     
             ReadFileCallbackArgs failedCallbackArgs;
             failedCallbackArgs.Success = 0;

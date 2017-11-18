@@ -14,17 +14,22 @@ namespace Sasquatch { namespace Resources
             uint32_t m_resourceSize;
             void *m_resourceMemory;
         public:
-            ResourceHandle()
+            ResourceHandle() : m_resourceSize(0), m_resourceMemory(nullptr)
             {
-                m_resourceSize = 0;
-                m_resourceMemory = nullptr;
             }
 
             ResourceHandle(StringHandle resourceName, uint32_t resourceSize, void *resourceMemory)
-                : m_resourceName(resourceName)
+                : m_resourceName(resourceName),
+                m_resourceSize(resourceSize),
+                m_resourceMemory(resourceMemory)
             {
-                m_resourceSize = resourceSize;
-                m_resourceMemory = resourceMemory;
+            }
+
+            ResourceHandle(const ResourceHandle& other)
+                : m_resourceName(other.m_resourceName),
+                m_resourceSize(other.m_resourceSize),
+                m_resourceMemory(other.m_resourceMemory)
+            {
             }
 
             inline StringHandle GetName() { return m_resourceName; }
